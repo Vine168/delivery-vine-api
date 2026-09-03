@@ -3,6 +3,8 @@ import { Test } from '@nestjs/testing';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from '../src/app.module.js';
 import { Currency } from '../src/generated/prisma/enums.js';
+import { MAP_PROVIDER } from '../src/modules/locations/providers/map-provider.interface.js';
+import { FakeMapProvider } from './fake-map.provider.js';
 import { createValidationPipe } from '../src/common/pipes/validation.pipe.js';
 import { PrismaService } from '../src/database/prisma.service.js';
 import { RedisService } from '../src/redis/redis.service.js';
@@ -11,6 +13,7 @@ export interface TestHarness {
   app: INestApplication;
   prisma: PrismaService;
   redis: RedisService;
+  map: FakeMapProvider;
   close: () => Promise<void>;
   reset: () => Promise<void>;
   expireOtpCooldowns: () => Promise<void>;
@@ -22,7 +25,15 @@ export interface TestHarness {
  * production does.
  */
 export async function createTestHarness(): Promise<TestHarness> {
-  const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
+  // The map provider is the one dependency we stub: prices depend on
+  // distances, and a test's expected price cannot depend on what a live
+  // routing engine returns today.
+  const map = new FakeMapProvider();
+
+  const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
+    .overrideProvider(MAP_PROVIDER)
+    .useValue(map)
+    .compile();
 
   const app = moduleRef.createNestApplication<NestExpressApplication>({ logger: false });
   app.setGlobalPrefix('api', { exclude: ['health', 'health/live'] });
@@ -50,6 +61,33 @@ export async function createTestHarness(): Promise<TestHarness> {
         sortOrder: 1,
       },
       select: { id: true },
+    });
+
+    await prisma.promoCode.createMany({
+      data: [
+        {
+          code: 'SAVE500',
+          name: 'Save ៛500',
+          currency: Currency.KHR,
+          discountType: 'FIXED_AMOUNT',
+          discountValue: 500,
+          minOrderAmount: 5_000,
+          startsAt: new Date('2026-01-01'),
+          endsAt: new Date('2027-01-01'),
+          perCustomerLimit: 3,
+        },
+        {
+          code: 'NEW10',
+          name: '10% off your first delivery',
+          currency: Currency.KHR,
+          discountType: 'PERCENTAGE',
+          discountValue: 1_000,
+          maxDiscountAmount: 3_000,
+          startsAt: new Date('2026-01-01'),
+          endsAt: new Date('2027-01-01'),
+          perCustomerLimit: 1,
+        },
+      ],
     });
 
     await prisma.pricingRule.create({
@@ -94,6 +132,7 @@ export async function createTestHarness(): Promise<TestHarness> {
     app,
     prisma,
     redis,
+    map,
     reset,
     expireOtpCooldowns,
     close: async () => {

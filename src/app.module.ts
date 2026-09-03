@@ -16,8 +16,12 @@ import { RedisModule } from './redis/redis.module.js';
 import { AddressesModule } from './modules/addresses/addresses.module.js';
 import { AuthModule } from './modules/auth/auth.module.js';
 import { CustomersModule } from './modules/customers/customers.module.js';
+import { DeliveriesModule } from './modules/deliveries/deliveries.module.js';
 import { DriversModule } from './modules/drivers/drivers.module.js';
 import { HealthModule } from './modules/health/health.module.js';
+import { LocationsModule } from './modules/locations/locations.module.js';
+import { PricingModule } from './modules/pricing/pricing.module.js';
+import { PromoCodesModule } from './modules/promo-codes/promo-codes.module.js';
 import { StorageModule } from './modules/storage/storage.module.js';
 import { UploadsModule } from './modules/uploads/uploads.module.js';
 import { UsersModule } from './modules/users/users.module.js';
@@ -42,6 +46,10 @@ import { VehicleTypesModule } from './modules/vehicle-types/vehicle-types.module
     AddressesModule,
     DriversModule,
     VehicleTypesModule,
+    LocationsModule,
+    PricingModule,
+    PromoCodesModule,
+    DeliveriesModule,
     HealthModule,
   ],
   providers: [
