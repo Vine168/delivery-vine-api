@@ -11,8 +11,10 @@ import type { PaginatedResult } from '../../common/interfaces/paginated.interfac
 import type { AuthenticatedUser } from '../../common/interfaces/authenticated-user.interface.js';
 import { UserRole } from '../../generated/prisma/enums.js';
 import { DeliveryQuoteService } from './delivery-quote.service.js';
+import { DeliveryTrackingService } from './delivery-tracking.service.js';
 import { DeliveryService } from './delivery.service.js';
 import { CancelDeliveryDto, CreateDeliveryDto, QuoteDeliveryDto } from './dto/delivery-request.dto.js';
+import { DeliveryTrackingDto } from './dto/tracking.dto.js';
 import {
   DeliveryDto,
   DeliveryPackageViewDto,
@@ -29,6 +31,7 @@ export class CustomerDeliveriesController {
   constructor(
     private readonly deliveries: DeliveryService,
     private readonly quotes: DeliveryQuoteService,
+    private readonly tracking: DeliveryTrackingService,
   ) {}
 
   @Post('quote')
@@ -146,5 +149,21 @@ export class CustomerDeliveriesController {
   @ApiErrorResponses({ status: 404, code: ResponseCode.DELIVERY_NOT_FOUND })
   rebook(@CurrentUser() user: AuthenticatedUser, @Param() params: IdParamDto): Promise<DeliveryDto> {
     return this.deliveries.rebook(user.customerId as string, user.userId, params.id);
+  }
+
+  @Get(':id/tracking')
+  @ResponseCodeMeta(ResponseCode.DELIVERY_TRACKING_FETCHED)
+  @ApiOperation({
+    summary: 'Track a delivery',
+    description:
+      'Status, driver, live position, ETA and the full timeline. The position comes from the live location stream rather than the database, and the ETA is a real route. Realtime updates arrive over the delivery socket room; this endpoint is the fallback and the initial load.',
+  })
+  @ApiSuccessResponse({ code: ResponseCode.DELIVERY_TRACKING_FETCHED, type: DeliveryTrackingDto })
+  @ApiErrorResponses({ status: 404, code: ResponseCode.DELIVERY_NOT_FOUND })
+  track(
+    @CurrentUser('customerId') customerId: string,
+    @Param() params: IdParamDto,
+  ): Promise<DeliveryTrackingDto> {
+    return this.tracking.track(customerId, params.id);
   }
 }

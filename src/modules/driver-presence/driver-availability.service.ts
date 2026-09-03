@@ -230,6 +230,18 @@ export class DriverAvailabilityService {
     }
 
     const recorded = await this.recordTrackPoint(activeDelivery.id, driverId, dto, recordedAt);
+
+    // Announced rather than acted on here: the delivery module decides what a
+    // driver moving away from the pickup means. Awaited so the caller's
+    // response reflects any status change this fix caused, rather than the
+    // driver app seeing PICKED_UP for one more poll.
+    await this.events.emitAsync(DomainEvent.DRIVER_LOCATION_REPORTED, {
+      driverId,
+      deliveryId: activeDelivery.id,
+      latitude: dto.latitude,
+      longitude: dto.longitude,
+    });
+
     return { accepted: true, recorded, deliveryId: activeDelivery.id };
   }
 

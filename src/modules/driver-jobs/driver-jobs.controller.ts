@@ -8,6 +8,15 @@ import { ResponseCode } from '../../common/constants/response-codes.js';
 import { IdParamDto } from '../../common/dto/id-param.dto.js';
 import type { AuthenticatedUser } from '../../common/interfaces/authenticated-user.interface.js';
 import { UserRole } from '../../generated/prisma/enums.js';
+import { DeliveryExecutionService } from '../deliveries/delivery-execution.service.js';
+import {
+  ArrivedDto,
+  CompleteDeliveryDto,
+  ConfirmPickupDto,
+  DriverCancelJobDto,
+  ProofOfDeliveryDto,
+  ProofOfDeliveryViewDto,
+} from '../deliveries/dto/execution.dto.js';
 import { DriverJobsService } from './driver-jobs.service.js';
 import { DeclineJobDto, JobOfferDto } from './dto/job.dto.js';
 
@@ -16,7 +25,10 @@ import { DeclineJobDto, JobOfferDto } from './dto/job.dto.js';
 @Roles(UserRole.DRIVER)
 @Controller({ path: 'mobile/driver/jobs', version: '1' })
 export class DriverJobsController {
-  constructor(private readonly jobs: DriverJobsService) {}
+  constructor(
+    private readonly jobs: DriverJobsService,
+    private readonly execution: DeliveryExecutionService,
+  ) {}
 
   @Get('requests')
   @ResponseCodeMeta(ResponseCode.JOB_REQUESTS_FETCHED)
@@ -81,5 +93,145 @@ export class DriverJobsController {
     @Body() dto: DeclineJobDto,
   ): Promise<void> {
     await this.jobs.decline(driverId, params.id, dto ?? {});
+  }
+
+  // ── Execution ──────────────────────────────────────────────────────────
+  //
+  // Each step validates the transition against the state machine, writes the
+  // change and its history row in one transaction, and refuses anything out of
+  // order. The app's idea of the current status is never consulted.
+
+  @Post(':id/arrive-pickup')
+  @HttpCode(HttpStatus.OK)
+  @ResponseCodeMeta(ResponseCode.ARRIVED_PICKUP_CONFIRMED)
+  @ApiOperation({
+    summary: 'Report arrival at the pickup',
+    description: 'Only from DRIVER_ASSIGNED. Send your position and it is recorded with the transition.',
+  })
+  @ApiBody({ type: ArrivedDto, required: false })
+  @ApiSuccessResponse({ code: ResponseCode.ARRIVED_PICKUP_CONFIRMED })
+  @ApiErrorResponses(
+    { status: 404, code: ResponseCode.DELIVERY_NOT_ASSIGNED },
+    { status: 422, code: ResponseCode.DELIVERY_INVALID_TRANSITION },
+  )
+  async arrivePickup(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param() params: IdParamDto,
+    @Body() dto: ArrivedDto,
+  ): Promise<null> {
+    await this.execution.arriveAtPickup(user.driverId as string, user.userId, params.id, dto ?? {});
+    return null;
+  }
+
+  @Post(':id/confirm-pickup')
+  @HttpCode(HttpStatus.OK)
+  @ResponseCodeMeta(ResponseCode.PICKUP_CONFIRMED)
+  @ApiOperation({
+    summary: 'Confirm the package is collected',
+    description: 'Only from ARRIVED_PICKUP. The delivery moves to IN_TRANSIT on its own once you leave the pickup.',
+  })
+  @ApiBody({ type: ConfirmPickupDto, required: false })
+  @ApiSuccessResponse({ code: ResponseCode.PICKUP_CONFIRMED })
+  @ApiErrorResponses(
+    { status: 404, code: ResponseCode.DELIVERY_NOT_ASSIGNED },
+    { status: 422, code: ResponseCode.DELIVERY_INVALID_TRANSITION },
+  )
+  async confirmPickup(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param() params: IdParamDto,
+    @Body() dto: ConfirmPickupDto,
+  ): Promise<null> {
+    await this.execution.confirmPickup(user.driverId as string, user.userId, params.id, dto ?? {});
+    return null;
+  }
+
+  @Post(':id/arrive-dropoff')
+  @HttpCode(HttpStatus.OK)
+  @ResponseCodeMeta(ResponseCode.ARRIVED_DROPOFF_CONFIRMED)
+  @ApiOperation({
+    summary: 'Report arrival at the drop-off',
+    description: 'From PICKED_UP or IN_TRANSIT — a driver who drove straight there never passed through IN_TRANSIT.',
+  })
+  @ApiBody({ type: ArrivedDto, required: false })
+  @ApiSuccessResponse({ code: ResponseCode.ARRIVED_DROPOFF_CONFIRMED })
+  @ApiErrorResponses(
+    { status: 404, code: ResponseCode.DELIVERY_NOT_ASSIGNED },
+    { status: 422, code: ResponseCode.DELIVERY_INVALID_TRANSITION },
+  )
+  async arriveDropoff(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param() params: IdParamDto,
+    @Body() dto: ArrivedDto,
+  ): Promise<null> {
+    await this.execution.arriveAtDropoff(user.driverId as string, user.userId, params.id, dto ?? {});
+    return null;
+  }
+
+  @Post(':id/proof-of-delivery')
+  @HttpCode(HttpStatus.CREATED)
+  @ResponseCodeMeta(ResponseCode.PROOF_OF_DELIVERY_SAVED)
+  @ApiOperation({
+    summary: 'Attach proof of delivery',
+    description:
+      'Upload the photo first with POST /mobile/uploads (purpose PROOF_OF_DELIVERY), then send its id here. Sending it again replaces the previous one, so a blurred photo can be retaken.',
+  })
+  @ApiSuccessResponse({ status: 201, code: ResponseCode.PROOF_OF_DELIVERY_SAVED, type: ProofOfDeliveryViewDto })
+  @ApiErrorResponses(
+    { status: 400, code: ResponseCode.FILE_NOT_FOUND },
+    { status: 404, code: ResponseCode.DELIVERY_NOT_ASSIGNED },
+    { status: 422, code: ResponseCode.DELIVERY_INVALID_TRANSITION },
+  )
+  saveProof(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param() params: IdParamDto,
+    @Body() dto: ProofOfDeliveryDto,
+  ): Promise<ProofOfDeliveryViewDto> {
+    return this.execution.saveProofOfDelivery(user.driverId as string, user.userId, params.id, dto);
+  }
+
+  @Post(':id/complete')
+  @HttpCode(HttpStatus.OK)
+  @ResponseCodeMeta(ResponseCode.DELIVERY_COMPLETED)
+  @ApiOperation({
+    summary: 'Complete the delivery',
+    description:
+      'Only from ARRIVED_DROPOFF, and only once proof of delivery exists. Writes the immutable earning snapshot and frees you for the next job. Cash deliveries require confirming the amount collected.',
+  })
+  @ApiBody({ type: CompleteDeliveryDto, required: false })
+  @ApiSuccessResponse({ code: ResponseCode.DELIVERY_COMPLETED })
+  @ApiErrorResponses(
+    { status: 404, code: ResponseCode.DELIVERY_NOT_ASSIGNED },
+    { status: 422, code: ResponseCode.PROOF_OF_DELIVERY_REQUIRED },
+    { status: 422, code: ResponseCode.DELIVERY_INVALID_TRANSITION },
+  )
+  async complete(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param() params: IdParamDto,
+    @Body() dto: CompleteDeliveryDto,
+  ): Promise<null> {
+    await this.execution.complete(user.driverId as string, user.userId, params.id, dto ?? {});
+    return null;
+  }
+
+  @Post(':id/cancel')
+  @HttpCode(HttpStatus.OK)
+  @ResponseCodeMeta(ResponseCode.DELIVERY_CANCELLED, 'Delivery handed back and offered to another driver.')
+  @ApiOperation({
+    summary: 'Hand the job back',
+    description:
+      'Allowed before you collect the package. The customer’s booking is NOT cancelled — it returns to the pool for another driver, and you are not offered it again. Once you have the package this becomes a support matter.',
+  })
+  @ApiSuccessResponse({ code: ResponseCode.DELIVERY_CANCELLED })
+  @ApiErrorResponses(
+    { status: 404, code: ResponseCode.DELIVERY_NOT_ASSIGNED },
+    { status: 422, code: ResponseCode.DELIVERY_INVALID_TRANSITION, description: 'Too late — the package is already with you.' },
+  )
+  async cancel(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param() params: IdParamDto,
+    @Body() dto: DriverCancelJobDto,
+  ): Promise<null> {
+    await this.execution.releaseJob(user.driverId as string, user.userId, params.id, dto.reason);
+    return null;
   }
 }

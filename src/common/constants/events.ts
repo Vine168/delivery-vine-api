@@ -54,6 +54,7 @@ export const DomainEvent = {
   DELIVERY_EXPIRED: 'delivery.expired',
   DRIVER_WENT_ONLINE: 'driver.went_online',
   DRIVER_WENT_OFFLINE: 'driver.went_offline',
+  DRIVER_LOCATION_REPORTED: 'driver.location_reported',
   PAYMENT_STATUS_CHANGED: 'payment.status_changed',
   WITHDRAWAL_STATUS_CHANGED: 'withdrawal.status_changed',
   MESSAGE_CREATED: 'message.created',
