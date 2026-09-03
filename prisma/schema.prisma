@@ -293,13 +293,13 @@ model User {
   passwordHash    String?
   role            UserRole
   status          UserStatus @default(PENDING_VERIFICATION)
-  phoneVerifiedAt DateTime?
-  emailVerifiedAt DateTime?
-  lastLoginAt     DateTime?
+  phoneVerifiedAt DateTime?  @db.Timestamptz(3)
+  emailVerifiedAt DateTime?  @db.Timestamptz(3)
+  lastLoginAt     DateTime?  @db.Timestamptz(3)
   suspendedReason String?
-  createdAt       DateTime   @default(now())
-  updatedAt       DateTime   @updatedAt
-  deletedAt       DateTime?
+  createdAt       DateTime   @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime   @updatedAt @db.Timestamptz(3)
+  deletedAt       DateTime?  @db.Timestamptz(3)
 
   customerProfile CustomerProfile?
   driverProfile   DriverProfile?
@@ -330,10 +330,10 @@ model RefreshToken {
   sessionId    String
   tokenHash    String    @unique
   familyId     String
-  expiresAt    DateTime
-  revokedAt    DateTime?
+  expiresAt    DateTime  @db.Timestamptz(3)
+  revokedAt    DateTime? @db.Timestamptz(3)
   replacedById String?
-  createdAt    DateTime  @default(now())
+  createdAt    DateTime  @default(now()) @db.Timestamptz(3)
 
   user    User        @relation(fields: [userId], references: [id], onDelete: Cascade)
   session UserSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
@@ -349,9 +349,9 @@ model UserSession {
   deviceId   String?
   ipAddress  String?
   userAgent  String?
-  createdAt  DateTime  @default(now())
-  lastSeenAt DateTime  @default(now())
-  revokedAt  DateTime?
+  createdAt  DateTime  @default(now()) @db.Timestamptz(3)
+  lastSeenAt DateTime  @default(now()) @db.Timestamptz(3)
+  revokedAt  DateTime? @db.Timestamptz(3)
 
   user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   device        Device?        @relation(fields: [deviceId], references: [id], onDelete: SetNull)
@@ -369,9 +369,9 @@ model Device {
   osVersion      String?
   appVersion     String?
   locale         String?
-  lastSeenAt     DateTime       @default(now())
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
+  lastSeenAt     DateTime       @default(now()) @db.Timestamptz(3)
+  createdAt      DateTime       @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime       @updatedAt @db.Timestamptz(3)
 
   user       User              @relation(fields: [userId], references: [id], onDelete: Cascade)
   pushTokens DevicePushToken[]
@@ -387,9 +387,9 @@ model DevicePushToken {
   provider   PushProvider @default(FCM)
   token      String       @unique
   isActive   Boolean      @default(true)
-  lastUsedAt DateTime?
-  createdAt  DateTime     @default(now())
-  updatedAt  DateTime     @updatedAt
+  lastUsedAt DateTime?    @db.Timestamptz(3)
+  createdAt  DateTime     @default(now()) @db.Timestamptz(3)
+  updatedAt  DateTime     @updatedAt @db.Timestamptz(3)
 
   device     Device         @relation(fields: [deviceId], references: [id], onDelete: Cascade)
   dispatches PushDispatch[]
@@ -408,15 +408,15 @@ model OtpVerification {
   attempts              Int        @default(0)
   maxAttempts           Int        @default(5)
   resendCount           Int        @default(0)
-  expiresAt             DateTime
-  verifiedAt            DateTime?
-  consumedAt            DateTime?
+  expiresAt             DateTime   @db.Timestamptz(3)
+  verifiedAt            DateTime?  @db.Timestamptz(3)
+  consumedAt            DateTime?  @db.Timestamptz(3)
   /// Short-lived proof issued after a successful verify; spent by
   /// set-password / reset-password. Hashed, never returned twice.
   verificationTokenHash String?
-  verificationExpiresAt DateTime?
+  verificationExpiresAt DateTime?  @db.Timestamptz(3)
   ipAddress             String?
-  createdAt             DateTime   @default(now())
+  createdAt             DateTime   @default(now()) @db.Timestamptz(3)
 
   @@index([identifier, purpose, createdAt])
   @@index([verificationTokenHash])
@@ -433,9 +433,9 @@ model IdempotencyKey {
   requestHash  String
   statusCode   Int?
   responseBody Json?
-  completedAt  DateTime?
-  expiresAt    DateTime
-  createdAt    DateTime  @default(now())
+  completedAt  DateTime? @db.Timestamptz(3)
+  expiresAt    DateTime  @db.Timestamptz(3)
+  createdAt    DateTime  @default(now()) @db.Timestamptz(3)
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -450,9 +450,9 @@ model CustomerProfile {
   userId       String    @unique
   fullName     String
   avatarFileId String?
-  dateOfBirth  DateTime?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  dateOfBirth  DateTime? @db.Timestamptz(3)
+  createdAt    DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime  @updatedAt @db.Timestamptz(3)
 
   user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
   avatarFile       FileAsset?        @relation("CustomerAvatar", fields: [avatarFileId], references: [id], onDelete: SetNull)
@@ -478,9 +478,9 @@ model CustomerAddress {
   contactPhone String
   remarks      String?
   isDefault    Boolean      @default(false)
-  createdAt    DateTime     @default(now())
-  updatedAt    DateTime     @updatedAt
-  deletedAt    DateTime?
+  createdAt    DateTime     @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime     @updatedAt @db.Timestamptz(3)
+  deletedAt    DateTime?    @db.Timestamptz(3)
 
   customer CustomerProfile @relation(fields: [customerId], references: [id], onDelete: Cascade)
 
@@ -491,7 +491,7 @@ model FavoriteDriver {
   id         String   @id @default(cuid(2))
   customerId String
   driverId   String
-  createdAt  DateTime @default(now())
+  createdAt  DateTime @default(now()) @db.Timestamptz(3)
 
   customer CustomerProfile @relation(fields: [customerId], references: [id], onDelete: Cascade)
   driver   DriverProfile   @relation(fields: [driverId], references: [id], onDelete: Cascade)
@@ -510,9 +510,9 @@ model PackageTemplate {
   description String?
   remarks     String?
   photoFileId String?
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
-  deletedAt   DateTime?
+  createdAt   DateTime    @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime    @updatedAt @db.Timestamptz(3)
+  deletedAt   DateTime?   @db.Timestamptz(3)
 
   customer  CustomerProfile @relation(fields: [customerId], references: [id], onDelete: Cascade)
   photoFile FileAsset?      @relation("PackageTemplatePhoto", fields: [photoFileId], references: [id], onDelete: SetNull)
@@ -528,7 +528,7 @@ model DriverProfile {
   fullName            String
   avatarFileId        String?
   approvalStatus      DriverApprovalStatus @default(PENDING_APPROVAL)
-  approvedAt          DateTime?
+  approvedAt          DateTime?            @db.Timestamptz(3)
   rejectedReason      String?
   suspendedReason     String?
   /// Aggregates maintained by the rating / delivery services.
@@ -538,9 +538,9 @@ model DriverProfile {
   cancelledDeliveries Int                  @default(0)
   offeredJobs         Int                  @default(0)
   acceptedJobs        Int                  @default(0)
-  createdAt           DateTime             @default(now())
-  updatedAt           DateTime             @updatedAt
-  deletedAt           DateTime?
+  createdAt           DateTime             @default(now()) @db.Timestamptz(3)
+  updatedAt           DateTime             @updatedAt @db.Timestamptz(3)
+  deletedAt           DateTime?            @db.Timestamptz(3)
 
   user           User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
   avatarFile     FileAsset?            @relation("DriverAvatar", fields: [avatarFileId], references: [id], onDelete: SetNull)
@@ -567,10 +567,10 @@ model DriverAvailability {
   id            String                   @id @default(cuid(2))
   driverId      String                   @unique
   status        DriverAvailabilityStatus @default(OFFLINE)
-  onlineSinceAt DateTime?
-  lastOnlineAt  DateTime?
-  lastOfflineAt DateTime?
-  updatedAt     DateTime                 @updatedAt
+  onlineSinceAt DateTime?                @db.Timestamptz(3)
+  lastOnlineAt  DateTime?                @db.Timestamptz(3)
+  lastOfflineAt DateTime?                @db.Timestamptz(3)
+  updatedAt     DateTime                 @updatedAt @db.Timestamptz(3)
 
   driver DriverProfile @relation(fields: [driverId], references: [id], onDelete: Cascade)
 
@@ -582,8 +582,8 @@ model DriverAvailability {
 model DriverOnlineSession {
   id              String    @id @default(cuid(2))
   driverId        String
-  startedAt       DateTime  @default(now())
-  endedAt         DateTime?
+  startedAt       DateTime  @default(now()) @db.Timestamptz(3)
+  endedAt         DateTime? @db.Timestamptz(3)
   durationSeconds Int?
 
   driver DriverProfile @relation(fields: [driverId], references: [id], onDelete: Cascade)
@@ -604,8 +604,8 @@ model VehicleType {
   routingProfile String   @default("MOTOR")
   sortOrder      Int      @default(0)
   isActive       Boolean  @default(true)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  createdAt      DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt @db.Timestamptz(3)
 
   vehicles     DriverVehicle[]
   pricingRules PricingRule[]
@@ -628,9 +628,9 @@ model DriverVehicle {
   isPrimary     Boolean              @default(true)
   status        DocumentReviewStatus @default(PENDING)
   reviewNote    String?
-  createdAt     DateTime             @default(now())
-  updatedAt     DateTime             @updatedAt
-  deletedAt     DateTime?
+  createdAt     DateTime             @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime             @updatedAt @db.Timestamptz(3)
+  deletedAt     DateTime?            @db.Timestamptz(3)
 
   driver      DriverProfile @relation(fields: [driverId], references: [id], onDelete: Cascade)
   vehicleType VehicleType   @relation(fields: [vehicleTypeId], references: [id])
@@ -648,11 +648,11 @@ model DriverDocument {
   fileId           String
   status           DocumentReviewStatus @default(PENDING)
   reviewedByUserId String?
-  reviewedAt       DateTime?
+  reviewedAt       DateTime?            @db.Timestamptz(3)
   reviewNote       String?
-  expiresAt        DateTime?
-  createdAt        DateTime             @default(now())
-  updatedAt        DateTime             @updatedAt
+  expiresAt        DateTime?            @db.Timestamptz(3)
+  createdAt        DateTime             @default(now()) @db.Timestamptz(3)
+  updatedAt        DateTime             @updatedAt @db.Timestamptz(3)
 
   driver     DriverProfile @relation(fields: [driverId], references: [id], onDelete: Cascade)
   file       FileAsset     @relation("DriverDocumentFile", fields: [fileId], references: [id])
@@ -671,8 +671,8 @@ model DriverPaymentSetting {
   accountNumberEnc   String?
   accountNumberLast4 String?
   khqrFileId         String?
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  createdAt          DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt          DateTime @updatedAt @db.Timestamptz(3)
 
   driver   DriverProfile @relation(fields: [driverId], references: [id], onDelete: Cascade)
   khqrFile FileAsset?    @relation("DriverKhqr", fields: [khqrFileId], references: [id], onDelete: SetNull)
@@ -688,8 +688,8 @@ model DriverLocation {
   heading    Float?
   speed      Float?
   accuracy   Float?
-  recordedAt DateTime
-  updatedAt  DateTime @updatedAt
+  recordedAt DateTime @db.Timestamptz(3)
+  updatedAt  DateTime @updatedAt @db.Timestamptz(3)
 
   driver DriverProfile @relation(fields: [driverId], references: [id], onDelete: Cascade)
 
@@ -705,7 +705,7 @@ model DeliveryTrackPoint {
   longitude  Float
   heading    Float?
   speed      Float?
-  recordedAt DateTime
+  recordedAt DateTime @db.Timestamptz(3)
 
   delivery Delivery @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
 
@@ -776,14 +776,14 @@ model Delivery {
   codAmount      Int?
   codCurrency    Currency?
   codPayer       CodPayer?
-  codCollectedAt DateTime?
+  codCollectedAt DateTime?     @db.Timestamptz(3)
 
   customerNote String?
 
   // ── Matching ──
   searchRound     Int       @default(0)
-  searchStartedAt DateTime?
-  searchExpiresAt DateTime?
+  searchStartedAt DateTime? @db.Timestamptz(3)
+  searchExpiresAt DateTime? @db.Timestamptz(3)
 
   // ── Cancellation ──
   cancelledByType   ActorType?
@@ -791,18 +791,18 @@ model Delivery {
   cancelReason      String?
 
   // ── Lifecycle timestamps ──
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
-  confirmedAt      DateTime?
-  assignedAt       DateTime?
-  arrivedPickupAt  DateTime?
-  pickedUpAt       DateTime?
-  inTransitAt      DateTime?
-  arrivedDropoffAt DateTime?
-  deliveredAt      DateTime?
-  cancelledAt      DateTime?
-  expiredAt        DateTime?
-  deletedAt        DateTime?
+  createdAt        DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt        DateTime  @updatedAt @db.Timestamptz(3)
+  confirmedAt      DateTime? @db.Timestamptz(3)
+  assignedAt       DateTime? @db.Timestamptz(3)
+  arrivedPickupAt  DateTime? @db.Timestamptz(3)
+  pickedUpAt       DateTime? @db.Timestamptz(3)
+  inTransitAt      DateTime? @db.Timestamptz(3)
+  arrivedDropoffAt DateTime? @db.Timestamptz(3)
+  deliveredAt      DateTime? @db.Timestamptz(3)
+  cancelledAt      DateTime? @db.Timestamptz(3)
+  expiredAt        DateTime? @db.Timestamptz(3)
+  deletedAt        DateTime? @db.Timestamptz(3)
 
   customer      CustomerProfile         @relation(fields: [customerId], references: [id])
   driver        DriverProfile?          @relation(fields: [driverId], references: [id])
@@ -841,8 +841,8 @@ model DeliveryRecipient {
   note           String?
   /// Filled at proof-of-delivery time — who actually took the package.
   receivedByName String?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  createdAt      DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt @db.Timestamptz(3)
 
   delivery Delivery @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
 }
@@ -859,7 +859,7 @@ model DeliveryPackage {
   declaredValueAmount   Int?
   declaredValueCurrency Currency?
   photoFileId           String?
-  createdAt             DateTime    @default(now())
+  createdAt             DateTime    @default(now()) @db.Timestamptz(3)
 
   delivery  Delivery   @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
   photoFile FileAsset? @relation("PackagePhoto", fields: [photoFileId], references: [id], onDelete: SetNull)
@@ -878,7 +878,7 @@ model DeliveryStatusHistory {
   actorUserId String?
   reason      String?
   metadata    Json?
-  createdAt   DateTime        @default(now())
+  createdAt   DateTime        @default(now()) @db.Timestamptz(3)
 
   delivery Delivery @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
   actor    User?    @relation("StatusActor", fields: [actorUserId], references: [id], onDelete: SetNull)
@@ -896,15 +896,15 @@ model DeliveryAssignment {
   driverId                 String
   status                   AssignmentStatus @default(OFFERED)
   round                    Int              @default(1)
-  offeredAt                DateTime         @default(now())
-  expiresAt                DateTime
-  respondedAt              DateTime?
+  offeredAt                DateTime         @default(now()) @db.Timestamptz(3)
+  expiresAt                DateTime         @db.Timestamptz(3)
+  respondedAt              DateTime?        @db.Timestamptz(3)
   declineReason            String?
   distanceToPickupMeters   Int?
   estimatedEarningAmount   Int?
   estimatedEarningCurrency Currency?
-  createdAt                DateTime         @default(now())
-  updatedAt                DateTime         @updatedAt
+  createdAt                DateTime         @default(now()) @db.Timestamptz(3)
+  updatedAt                DateTime         @updatedAt @db.Timestamptz(3)
 
   delivery Delivery      @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
   driver   DriverProfile @relation(fields: [driverId], references: [id], onDelete: Cascade)
@@ -925,8 +925,8 @@ model ProofOfDelivery {
   recipientName   String?
   latitude        Float?
   longitude       Float?
-  capturedAt      DateTime
-  createdAt       DateTime @default(now())
+  capturedAt      DateTime @db.Timestamptz(3)
+  createdAt       DateTime @default(now()) @db.Timestamptz(3)
 
   delivery      Delivery      @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
   driver        DriverProfile @relation(fields: [driverId], references: [id])
@@ -942,7 +942,7 @@ model DeliveryRating {
   rating     Int
   comment    String?
   tags       String[]
-  createdAt  DateTime @default(now())
+  createdAt  DateTime @default(now()) @db.Timestamptz(3)
 
   delivery Delivery        @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
   customer CustomerProfile @relation(fields: [customerId], references: [id])
@@ -980,11 +980,11 @@ model PricingRule {
   surgeMultiplierBp      Int       @default(10000)
   priority               Int       @default(0)
   isActive               Boolean   @default(true)
-  effectiveFrom          DateTime  @default(now())
-  effectiveTo            DateTime?
+  effectiveFrom          DateTime  @default(now()) @db.Timestamptz(3)
+  effectiveTo            DateTime? @db.Timestamptz(3)
   version                Int       @default(1)
-  createdAt              DateTime  @default(now())
-  updatedAt              DateTime  @updatedAt
+  createdAt              DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt              DateTime  @updatedAt @db.Timestamptz(3)
 
   vehicleType VehicleType @relation(fields: [vehicleTypeId], references: [id])
   zone        Zone?       @relation(fields: [zoneId], references: [id])
@@ -1002,8 +1002,8 @@ model Zone {
   /// this later without touching the pricing API.
   boundary  Json?
   isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
   pricingRules PricingRule[]
 }
@@ -1019,15 +1019,15 @@ model PromoCode {
   discountValue     Int
   maxDiscountAmount Int?
   minOrderAmount    Int?
-  startsAt          DateTime
-  endsAt            DateTime
+  startsAt          DateTime     @db.Timestamptz(3)
+  endsAt            DateTime     @db.Timestamptz(3)
   usageLimit        Int?
   usageCount        Int          @default(0)
   perCustomerLimit  Int?         @default(1)
   isActive          Boolean      @default(true)
-  createdAt         DateTime     @default(now())
-  updatedAt         DateTime     @updatedAt
-  deletedAt         DateTime?
+  createdAt         DateTime     @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime     @updatedAt @db.Timestamptz(3)
+  deletedAt         DateTime?    @db.Timestamptz(3)
 
   vehicleTypes PromoCodeVehicleType[]
   usages       PromoCodeUsage[]
@@ -1054,7 +1054,7 @@ model PromoCodeUsage {
   deliveryId     String   @unique
   discountAmount Int
   currency       Currency
-  createdAt      DateTime @default(now())
+  createdAt      DateTime @default(now()) @db.Timestamptz(3)
 
   promoCode PromoCode       @relation(fields: [promoCodeId], references: [id], onDelete: Cascade)
   customer  CustomerProfile @relation(fields: [customerId], references: [id], onDelete: Cascade)
@@ -1072,9 +1072,9 @@ model ExchangeRate {
   /// 1 base = `rate` quote.
   rate          Decimal   @db.Decimal(18, 6)
   source        String?
-  effectiveFrom DateTime
-  effectiveTo   DateTime?
-  createdAt     DateTime  @default(now())
+  effectiveFrom DateTime  @db.Timestamptz(3)
+  effectiveTo   DateTime? @db.Timestamptz(3)
+  createdAt     DateTime  @default(now()) @db.Timestamptz(3)
 
   @@unique([baseCurrency, quoteCurrency, effectiveFrom])
   @@index([baseCurrency, quoteCurrency, effectiveFrom])
@@ -1096,12 +1096,12 @@ model Payment {
   /// KHQR payload the app renders; never a secret.
   qrString      String?
   deepLink      String?
-  expiresAt     DateTime?
-  paidAt        DateTime?
+  expiresAt     DateTime?       @db.Timestamptz(3)
+  paidAt        DateTime?       @db.Timestamptz(3)
   failureReason String?
   metadata      Json?
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
+  createdAt     DateTime        @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime        @updatedAt @db.Timestamptz(3)
 
   delivery     Delivery             @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
   transactions PaymentTransaction[]
@@ -1123,7 +1123,7 @@ model PaymentTransaction {
   providerRef String?
   message     String?
   rawPayload  Json?
-  createdAt   DateTime               @default(now())
+  createdAt   DateTime               @default(now()) @db.Timestamptz(3)
 
   payment Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
 
@@ -1143,8 +1143,8 @@ model Wallet {
   reservedBalance Int      @default(0)
   /// Optimistic-lock counter, bumped on every ledger write.
   version         Int      @default(0)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt       DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime @updatedAt @db.Timestamptz(3)
 
   user         User                @relation(fields: [userId], references: [id], onDelete: Cascade)
   transactions WalletTransaction[]
@@ -1167,7 +1167,7 @@ model WalletTransaction {
   referenceId   String?
   description   String?
   metadata      Json?
-  createdAt     DateTime                @default(now())
+  createdAt     DateTime                @default(now()) @db.Timestamptz(3)
 
   wallet Wallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
 
@@ -1191,8 +1191,8 @@ model DriverEarning {
   netAmount           Int
   status              EarningStatus @default(PENDING)
   walletTransactionId String?
-  earnedAt            DateTime      @default(now())
-  createdAt           DateTime      @default(now())
+  earnedAt            DateTime      @default(now()) @db.Timestamptz(3)
+  createdAt           DateTime      @default(now()) @db.Timestamptz(3)
 
   driver   DriverProfile @relation(fields: [driverId], references: [id], onDelete: Cascade)
   delivery Delivery      @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
@@ -1219,11 +1219,11 @@ model Withdrawal {
   failureReason        String?
   /// The DEBIT entry that reserved the funds when the request was made.
   reserveTransactionId String?
-  requestedAt          DateTime         @default(now())
-  processedAt          DateTime?
-  completedAt          DateTime?
-  createdAt            DateTime         @default(now())
-  updatedAt            DateTime         @updatedAt
+  requestedAt          DateTime         @default(now()) @db.Timestamptz(3)
+  processedAt          DateTime?        @db.Timestamptz(3)
+  completedAt          DateTime?        @db.Timestamptz(3)
+  createdAt            DateTime         @default(now()) @db.Timestamptz(3)
+  updatedAt            DateTime         @updatedAt @db.Timestamptz(3)
 
   driver DriverProfile @relation(fields: [driverId], references: [id], onDelete: Cascade)
   wallet Wallet        @relation(fields: [walletId], references: [id])
@@ -1239,10 +1239,10 @@ model Conversation {
   deliveryId    String    @unique
   customerId    String
   driverId      String?
-  lastMessageAt DateTime?
-  closedAt      DateTime?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  lastMessageAt DateTime? @db.Timestamptz(3)
+  closedAt      DateTime? @db.Timestamptz(3)
+  createdAt     DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime  @updatedAt @db.Timestamptz(3)
 
   delivery     Delivery                  @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
   customer     CustomerProfile           @relation(fields: [customerId], references: [id])
@@ -1258,8 +1258,8 @@ model ConversationParticipant {
   id             String    @id @default(cuid(2))
   conversationId String
   userId         String
-  lastReadAt     DateTime?
-  joinedAt       DateTime  @default(now())
+  lastReadAt     DateTime? @db.Timestamptz(3)
+  joinedAt       DateTime  @default(now()) @db.Timestamptz(3)
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -1277,8 +1277,8 @@ model Message {
   fileId         String?
   latitude       Float?
   longitude      Float?
-  createdAt      DateTime    @default(now())
-  deletedAt      DateTime?
+  createdAt      DateTime    @default(now()) @db.Timestamptz(3)
+  deletedAt      DateTime?   @db.Timestamptz(3)
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   sender       User         @relation(fields: [senderUserId], references: [id])
@@ -1297,8 +1297,8 @@ model Notification {
   body       String
   data       Json?
   deliveryId String?
-  readAt     DateTime?
-  createdAt  DateTime         @default(now())
+  readAt     DateTime?        @db.Timestamptz(3)
+  createdAt  DateTime         @default(now()) @db.Timestamptz(3)
 
   user       User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   delivery   Delivery?      @relation(fields: [deliveryId], references: [id], onDelete: SetNull)
@@ -1317,8 +1317,8 @@ model PushDispatch {
   providerRef    String?
   error          String?
   attempts       Int                @default(0)
-  sentAt         DateTime?
-  createdAt      DateTime           @default(now())
+  sentAt         DateTime?          @db.Timestamptz(3)
+  createdAt      DateTime           @default(now()) @db.Timestamptz(3)
 
   notification Notification    @relation(fields: [notificationId], references: [id], onDelete: Cascade)
   pushToken    DevicePushToken @relation(fields: [pushTokenId], references: [id], onDelete: Cascade)
@@ -1346,8 +1346,8 @@ model FileAsset {
   width            Int?
   height           Int?
   uploadedByUserId String?
-  createdAt        DateTime         @default(now())
-  deletedAt        DateTime?
+  createdAt        DateTime         @default(now()) @db.Timestamptz(3)
+  deletedAt        DateTime?        @db.Timestamptz(3)
 
   uploadedBy      User?                  @relation(fields: [uploadedByUserId], references: [id], onDelete: SetNull)
   customerAvatars CustomerProfile[]      @relation("CustomerAvatar")

@@ -12,11 +12,15 @@ import { buildLoggerOptions } from './common/logger/logger.config.js';
 import { RequestContextMiddleware } from './common/middleware/request-context.middleware.js';
 import { AppConfigModule } from './config/config.module.js';
 import { PrismaModule } from './database/prisma.module.js';
+import { QueueModule } from './queue/queue.module.js';
 import { RedisModule } from './redis/redis.module.js';
 import { AddressesModule } from './modules/addresses/addresses.module.js';
 import { AuthModule } from './modules/auth/auth.module.js';
 import { CustomersModule } from './modules/customers/customers.module.js';
 import { DeliveriesModule } from './modules/deliveries/deliveries.module.js';
+import { DeliveryMatchingModule } from './modules/delivery-matching/delivery-matching.module.js';
+import { DriverJobsModule } from './modules/driver-jobs/driver-jobs.module.js';
+import { DriverPresenceModule } from './modules/driver-presence/driver-presence.module.js';
 import { DriversModule } from './modules/drivers/drivers.module.js';
 import { HealthModule } from './modules/health/health.module.js';
 import { LocationsModule } from './modules/locations/locations.module.js';
@@ -38,6 +42,7 @@ import { VehicleTypesModule } from './modules/vehicle-types/vehicle-types.module
     EventEmitterModule.forRoot({ wildcard: false, delimiter: '.', maxListeners: 20, verboseMemoryLeak: true }),
     PrismaModule,
     RedisModule,
+    QueueModule,
     StorageModule,
     UploadsModule,
     UsersModule,
@@ -50,6 +55,9 @@ import { VehicleTypesModule } from './modules/vehicle-types/vehicle-types.module
     PricingModule,
     PromoCodesModule,
     DeliveriesModule,
+    DriverPresenceModule,
+    DeliveryMatchingModule,
+    DriverJobsModule,
     HealthModule,
   ],
   providers: [

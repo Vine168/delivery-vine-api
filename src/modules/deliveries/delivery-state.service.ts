@@ -20,6 +20,13 @@ export interface TransitionInput {
   metadata?: Prisma.InputJsonValue;
   /** Extra columns to set in the same statement, e.g. driverId on assignment. */
   data?: Prisma.DeliveryUncheckedUpdateManyInput;
+  /**
+   * Extra conditions the row must still satisfy. Job acceptance uses
+   * `{ driverId: null }` so a second driver's update matches nothing.
+   */
+  where?: Prisma.DeliveryWhereInput;
+  /** The code to report when the conditional update matches no rows. */
+  conflictCode?: ResponseCode;
 }
 
 export interface TransitionResult {
@@ -75,7 +82,7 @@ export class DeliveryStateService {
     const timestampField = STATUS_TIMESTAMP_FIELD[input.to];
 
     const { count } = await tx.delivery.updateMany({
-      where: { id: input.deliveryId, status: { in: acceptedFrom } },
+      where: { id: input.deliveryId, status: { in: acceptedFrom }, ...input.where },
       data: {
         status: input.to,
         ...(timestampField ? { [timestampField]: new Date() } : {}),
@@ -83,11 +90,13 @@ export class DeliveryStateService {
       },
     });
 
-    // Someone else moved it between our read and our write.
+    // Someone else moved it between our read and our write. This is the line
+    // that makes two drivers accepting the same job safe: the loser's UPDATE
+    // matches zero rows and it is told so, rather than overwriting the winner.
     if (count === 0) {
       throw AppException.conflict(
-        ResponseCode.DELIVERY_INVALID_TRANSITION,
-        'This delivery was updated by someone else. Please refresh.',
+        input.conflictCode ?? ResponseCode.DELIVERY_INVALID_TRANSITION,
+        input.conflictCode ? undefined : 'This delivery was updated by someone else. Please refresh.',
       );
     }
 

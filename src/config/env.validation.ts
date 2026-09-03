@@ -235,6 +235,11 @@ export class EnvironmentVariables {
   @IsOptional()
   MATCHING_MAX_ROUNDS = 4;
 
+  @toBool()
+  @IsBoolean()
+  @IsOptional()
+  MATCHING_ENABLED = true;
+
   @toInt()
   @IsInt()
   @IsOptional()

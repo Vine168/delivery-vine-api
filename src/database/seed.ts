@@ -18,7 +18,7 @@ if (!process.env.DATABASE_URL && existsSync(envPath)) {
 }
 
 const prisma = new PrismaClient({
-  adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }),
+  adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL, options: '-c timezone=UTC' }),
 });
 
 interface VehicleTypeSeed {

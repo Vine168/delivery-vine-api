@@ -80,3 +80,61 @@ export function pngFixture(): Buffer {
 export function scriptFixture(): Buffer {
   return Buffer.from('<?php system($_GET["cmd"]); ?>\n'.repeat(4));
 }
+
+/**
+ * A driver who can actually work: approved, documented, with a vehicle, and
+ * online at a position. Everything the availability rules require, done the
+ * way an admin and the driver app would do it.
+ */
+export async function readyDriver(
+  harness: import('./app-harness.js').TestHarness,
+  at: { latitude: number; longitude: number } = { latitude: 11.557, longitude: 104.929 },
+  phone = nextPhone(),
+): Promise<ActivatedAccount> {
+  const driver = await activate(harness, 'DRIVER', phone);
+  const driverId = driver.driverId as string;
+
+  const vehicleType = await harness.prisma.vehicleType.findFirstOrThrow({ select: { id: true } });
+
+  await http(harness)
+    .patch(`${API}/mobile/driver/vehicle`)
+    .set({ Authorization: `Bearer ${driver.accessToken}` })
+    .send({ vehicleTypeId: vehicleType.id, plateNumber: `${phone.slice(-6)}-X` })
+    .expect(200);
+
+  const file = await harness.prisma.fileAsset.create({
+    data: {
+      bucket: 'deliver',
+      objectKey: `test-docs/${driverId}/${Date.now()}-${Math.random()}.png`,
+      purpose: 'DRIVER_DOCUMENT',
+      visibility: 'PRIVATE',
+      mimeType: 'image/png',
+      sizeBytes: 1,
+      uploadedByUserId: driver.userId,
+    },
+    select: { id: true },
+  });
+
+  await harness.prisma.driverDocument.createMany({
+    data: ['NATIONAL_ID_FRONT', 'NATIONAL_ID_BACK', 'DRIVER_LICENSE_FRONT', 'VEHICLE_REGISTRATION'].map((type) => ({
+      driverId,
+      type: type as 'NATIONAL_ID_FRONT',
+      fileId: file.id,
+      status: 'APPROVED' as const,
+      reviewedAt: new Date(),
+    })),
+  });
+
+  await harness.prisma.driverProfile.update({
+    where: { id: driverId },
+    data: { approvalStatus: 'ACTIVE', approvedAt: new Date() },
+  });
+
+  await http(harness)
+    .put(`${API}/mobile/driver/availability`)
+    .set({ Authorization: `Bearer ${driver.accessToken}` })
+    .send({ status: 'ONLINE', ...at })
+    .expect(200);
+
+  return driver;
+}

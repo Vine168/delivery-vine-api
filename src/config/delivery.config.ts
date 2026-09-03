@@ -6,6 +6,9 @@ export const deliveryConfig = registerAs('delivery', () => ({
   matchingBatchSize: Number(process.env.MATCHING_BATCH_SIZE ?? 5),
   offerTtlSeconds: Number(process.env.MATCHING_OFFER_TTL_SECONDS ?? 30),
   maxRounds: Number(process.env.MATCHING_MAX_ROUNDS ?? 4),
+  /// Turn off to stop bookings dispatching automatically (used by tests, which
+  /// drive the matcher explicitly so their assertions are deterministic).
+  matchingEnabled: process.env.MATCHING_ENABLED !== 'false',
   driverPresenceTtlSeconds: Number(process.env.DRIVER_PRESENCE_TTL_SECONDS ?? 60),
   trackPointMinIntervalSeconds: Number(process.env.TRACK_POINT_MIN_INTERVAL_SECONDS ?? 20),
 }));

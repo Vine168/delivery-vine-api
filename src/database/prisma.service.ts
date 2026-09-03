@@ -16,7 +16,16 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
     const max = config.get<number>('database.poolSize', 10);
 
     super({
-      adapter: new PrismaPg({ connectionString, max }),
+      adapter: new PrismaPg({
+        connectionString,
+        max,
+        // Pin the session to UTC. Without this the connection inherits the
+        // server's zone (Asia/Phnom_Penh here), and timestamps written by
+        // Prisma no longer line up with `now()` in raw SQL, psql or any BI
+        // tool — self-consistent through the ORM, silently off by the offset
+        // everywhere else.
+        options: '-c timezone=UTC',
+      }),
       log:
         config.get<string>('app.env') === 'development'
           ? [{ emit: 'event', level: 'warn' }, { emit: 'event', level: 'error' }]

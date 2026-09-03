@@ -7,6 +7,7 @@ import { MAP_PROVIDER } from '../src/modules/locations/providers/map-provider.in
 import { FakeMapProvider } from './fake-map.provider.js';
 import { createValidationPipe } from '../src/common/pipes/validation.pipe.js';
 import { PrismaService } from '../src/database/prisma.service.js';
+import { DeliveryMatchingService } from '../src/modules/delivery-matching/delivery-matching.service.js';
 import { RedisService } from '../src/redis/redis.service.js';
 
 export interface TestHarness {
@@ -14,6 +15,8 @@ export interface TestHarness {
   prisma: PrismaService;
   redis: RedisService;
   map: FakeMapProvider;
+  /** MATCHING_ENABLED is off in tests; specs run rounds themselves. */
+  matching: DeliveryMatchingService;
   close: () => Promise<void>;
   reset: () => Promise<void>;
   expireOtpCooldowns: () => Promise<void>;
@@ -39,10 +42,14 @@ export async function createTestHarness(): Promise<TestHarness> {
   app.setGlobalPrefix('api', { exclude: ['health', 'health/live'] });
   app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
   app.useGlobalPipes(createValidationPipe());
-  await app.init();
+  // Concurrency specs fire several requests at once; without a listening
+  // server supertest binds a fresh ephemeral port per call and they reset
+  // each other.
+  await app.listen(0);
 
   const prisma = app.get(PrismaService);
   const redis = app.get(RedisService);
+  const matching = app.get(DeliveryMatchingService);
 
   /**
    * Reference data every e2e spec can rely on. Truncation wipes the seeded
@@ -133,6 +140,7 @@ export async function createTestHarness(): Promise<TestHarness> {
     prisma,
     redis,
     map,
+    matching,
     reset,
     expireOtpCooldowns,
     close: async () => {
