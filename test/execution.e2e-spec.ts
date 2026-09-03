@@ -324,7 +324,10 @@ describe('Delivery execution (e2e)', () => {
       expect(earning.commissionAmount).toBe(delivery.commissionAmount);
       expect(earning.netAmount).toBe(delivery.driverEarningAmount);
       expect(earning.currency).toBe(delivery.currency);
-      expect(earning.status).toBe('PENDING'); // credited to the wallet in Phase 7
+      // Settled into the wallet as part of completing, and linked to the
+      // ledger entry that paid it.
+      expect(earning.status).toBe('AVAILABLE');
+      expect(earning.walletTransactionId).toBeTruthy();
 
       // Changing today's rules cannot rewrite yesterday's pay.
       await harness.prisma.pricingRule.updateMany({ data: { commissionPercentBp: 9_000 } });

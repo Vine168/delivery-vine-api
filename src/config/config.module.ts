@@ -7,6 +7,7 @@ import { validateEnv } from './env.validation.js';
 import { jwtConfig } from './jwt.config.js';
 import { mapConfig } from './map.config.js';
 import { otpConfig } from './otp.config.js';
+import { paymentConfig, payoutConfig } from './payment.config.js';
 import { redisConfig } from './redis.config.js';
 import { storageConfig } from './storage.config.js';
 
@@ -28,6 +29,8 @@ import { storageConfig } from './storage.config.js';
         mapConfig,
         otpConfig,
         deliveryConfig,
+        paymentConfig,
+        payoutConfig,
       ],
     }),
   ],

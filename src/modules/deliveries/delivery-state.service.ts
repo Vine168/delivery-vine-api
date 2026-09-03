@@ -127,28 +127,26 @@ export class DeliveryStateService {
    *
    * Emitting inside the transaction would tell the world about a change that
    * might still roll back, so callers do this once they are committed.
+   *
+   * Awaited rather than fired and forgotten: a completed delivery pays the
+   * driver, and the response should not claim success while the money is still
+   * in flight. Listeners are expected to swallow their own failures — none of
+   * them may undo a transition that has already committed.
    */
-  publish(result: TransitionResult): void {
-    this.events.emit(DomainEvent.DELIVERY_STATUS_CHANGED, result);
+  async publish(result: TransitionResult): Promise<void> {
+    await this.events.emitAsync(DomainEvent.DELIVERY_STATUS_CHANGED, result);
 
-    switch (result.to) {
-      case DeliveryStatus.DRIVER_ASSIGNED:
-        this.events.emit(DomainEvent.DELIVERY_ASSIGNED, result);
-        break;
-      case DeliveryStatus.DELIVERED:
-        this.events.emit(DomainEvent.DELIVERY_COMPLETED, result);
-        break;
-      case DeliveryStatus.CANCELLED:
-        this.events.emit(DomainEvent.DELIVERY_CANCELLED, result);
-        break;
-      case DeliveryStatus.EXPIRED:
-        this.events.emit(DomainEvent.DELIVERY_EXPIRED, result);
-        break;
-      case DeliveryStatus.SEARCHING_DRIVER:
-        this.events.emit(DomainEvent.DELIVERY_CONFIRMED, result);
-        break;
-      default:
-        break;
+    const specific: Partial<Record<DeliveryStatus, string>> = {
+      [DeliveryStatus.DRIVER_ASSIGNED]: DomainEvent.DELIVERY_ASSIGNED,
+      [DeliveryStatus.DELIVERED]: DomainEvent.DELIVERY_COMPLETED,
+      [DeliveryStatus.CANCELLED]: DomainEvent.DELIVERY_CANCELLED,
+      [DeliveryStatus.EXPIRED]: DomainEvent.DELIVERY_EXPIRED,
+      [DeliveryStatus.SEARCHING_DRIVER]: DomainEvent.DELIVERY_CONFIRMED,
+    };
+
+    const event = specific[result.to];
+    if (event) {
+      await this.events.emitAsync(event, result);
     }
 
     this.logger.log(`${result.bookingCode}: ${result.from} → ${result.to}`);

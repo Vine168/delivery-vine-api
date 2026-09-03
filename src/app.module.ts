@@ -22,11 +22,15 @@ import { DeliveriesModule } from './modules/deliveries/deliveries.module.js';
 import { DeliveryMatchingModule } from './modules/delivery-matching/delivery-matching.module.js';
 import { DriverJobsModule } from './modules/driver-jobs/driver-jobs.module.js';
 import { DriverPresenceModule } from './modules/driver-presence/driver-presence.module.js';
+import { EarningsModule } from './modules/earnings/earnings.module.js';
 import { DriversModule } from './modules/drivers/drivers.module.js';
 import { HealthModule } from './modules/health/health.module.js';
 import { LocationsModule } from './modules/locations/locations.module.js';
 import { PricingModule } from './modules/pricing/pricing.module.js';
+import { PaymentsModule } from './modules/payments/payments.module.js';
 import { PromoCodesModule } from './modules/promo-codes/promo-codes.module.js';
+import { WalletsModule } from './modules/wallets/wallets.module.js';
+import { WithdrawalsModule } from './modules/withdrawals/withdrawals.module.js';
 import { StorageModule } from './modules/storage/storage.module.js';
 import { UploadsModule } from './modules/uploads/uploads.module.js';
 import { UsersModule } from './modules/users/users.module.js';
@@ -59,6 +63,10 @@ import { VehicleTypesModule } from './modules/vehicle-types/vehicle-types.module
     DriverPresenceModule,
     DeliveryMatchingModule,
     DriverJobsModule,
+    WalletsModule,
+    EarningsModule,
+    WithdrawalsModule,
+    PaymentsModule,
     RealtimeModule,
     HealthModule,
   ],

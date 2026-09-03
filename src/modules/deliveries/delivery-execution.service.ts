@@ -1,6 +1,4 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { EventEmitter2 } from '@nestjs/event-emitter';
-import { DomainEvent } from '../../common/constants/events.js';
 import { ResponseCode } from '../../common/constants/response-codes.js';
 import { AppException } from '../../common/exceptions/app.exception.js';
 import { GeoUtil } from '../../common/utils/geo.util.js';
@@ -50,7 +48,6 @@ export class DeliveryExecutionService {
     private readonly uploads: UploadsService,
     private readonly fileUrls: FileUrlService,
     private readonly availability: DriverAvailabilityService,
-    private readonly events: EventEmitter2,
   ) {}
 
   async arriveAtPickup(driverId: string, userId: string, deliveryId: string, dto: ArrivedDto): Promise<void> {
@@ -67,7 +64,7 @@ export class DeliveryExecutionService {
       }),
     );
 
-    this.state.publish(result);
+    await this.state.publish(result);
   }
 
   async confirmPickup(driverId: string, userId: string, deliveryId: string, dto: ConfirmPickupDto): Promise<void> {
@@ -85,7 +82,7 @@ export class DeliveryExecutionService {
       }),
     );
 
-    this.state.publish(result);
+    await this.state.publish(result);
   }
 
   async arriveAtDropoff(driverId: string, userId: string, deliveryId: string, dto: ArrivedDto): Promise<void> {
@@ -103,7 +100,7 @@ export class DeliveryExecutionService {
       }),
     );
 
-    this.state.publish(result);
+    await this.state.publish(result);
   }
 
   /**
@@ -258,8 +255,8 @@ export class DeliveryExecutionService {
     // availability call recovers their status.
     await this.availability.setBusy(driverId, false);
 
-    this.state.publish(result);
-    this.events.emit(DomainEvent.DELIVERY_COMPLETED, result);
+    // publish() already emits DELIVERY_COMPLETED for this status.
+    await this.state.publish(result);
 
     this.logger.log(`${result.bookingCode} completed by driver ${driverId}`);
   }
@@ -316,7 +313,7 @@ export class DeliveryExecutionService {
 
     await this.availability.setBusy(driverId, false);
 
-    this.state.publish(result);
+    await this.state.publish(result);
     this.logger.warn(`${result.bookingCode} released by driver ${driverId}: ${reason}`);
   }
 
@@ -354,7 +351,7 @@ export class DeliveryExecutionService {
         }),
       );
 
-      this.state.publish(result);
+      await this.state.publish(result);
     } catch (error) {
       // Losing this race is harmless: the driver reported arrival first.
       this.logger.debug(`Could not mark ${deliveryId} in transit: ${String(error)}`);

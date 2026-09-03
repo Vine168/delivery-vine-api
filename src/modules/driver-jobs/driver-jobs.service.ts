@@ -184,7 +184,7 @@ export class DriverJobsService {
 
       await this.availability.setBusy(driverId, true);
 
-      this.state.publish(result);
+      await this.state.publish(result);
       this.events.emit(WsEvent.DRIVER_REQUEST_CANCELLED, {
         deliveryId,
         exceptDriverId: driverId,

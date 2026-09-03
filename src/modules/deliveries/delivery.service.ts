@@ -171,7 +171,7 @@ export class DeliveryService {
       return delivery.id;
     });
 
-    this.state.publish({
+    await this.state.publish({
       deliveryId,
       from: DeliveryStatus.DRAFT,
       to: DeliveryStatus.SEARCHING_DRIVER,
@@ -255,7 +255,7 @@ export class DeliveryService {
       }),
     );
 
-    this.state.publish(result);
+    await this.state.publish(result);
     return this.findOne(customerId, deliveryId);
   }
 

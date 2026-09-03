@@ -8,6 +8,7 @@ import { FakeMapProvider } from './fake-map.provider.js';
 import { createValidationPipe } from '../src/common/pipes/validation.pipe.js';
 import { PrismaService } from '../src/database/prisma.service.js';
 import { DeliveryMatchingService } from '../src/modules/delivery-matching/delivery-matching.service.js';
+import { WithdrawalsService } from '../src/modules/withdrawals/withdrawals.service.js';
 import { RedisService } from '../src/redis/redis.service.js';
 
 export interface TestHarness {
@@ -19,6 +20,8 @@ export interface TestHarness {
   url: string;
   /** MATCHING_ENABLED is off in tests; specs run rounds themselves. */
   matching: DeliveryMatchingService;
+  /** Settlement is an admin action; specs drive it through the service. */
+  withdrawals: WithdrawalsService;
   close: () => Promise<void>;
   reset: () => Promise<void>;
   expireOtpCooldowns: () => Promise<void>;
@@ -56,6 +59,7 @@ export async function createTestHarness(): Promise<TestHarness> {
   const prisma = app.get(PrismaService);
   const redis = app.get(RedisService);
   const matching = app.get(DeliveryMatchingService);
+  const withdrawals = app.get(WithdrawalsService);
 
   /**
    * Reference data every e2e spec can rely on. Truncation wipes the seeded
@@ -147,6 +151,7 @@ export async function createTestHarness(): Promise<TestHarness> {
     redis,
     map,
     matching,
+    withdrawals,
     url,
     reset,
     expireOtpCooldowns,

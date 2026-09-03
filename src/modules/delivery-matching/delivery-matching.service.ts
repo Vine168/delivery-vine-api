@@ -266,7 +266,7 @@ export class DeliveryMatchingService {
       });
     });
 
-    this.state.publish(result);
+    await this.state.publish(result);
     return true;
   }
 

@@ -138,3 +138,71 @@ export async function readyDriver(
 
   return driver;
 }
+
+/** Runs a delivery all the way to DELIVERED so the driver actually gets paid. */
+export async function completedDelivery(
+  harness: import('./app-harness.js').TestHarness,
+  customer: ActivatedAccount,
+  driver: ActivatedAccount,
+  vehicleTypeId: string,
+): Promise<{ deliveryId: string; bookingCode: string; netAmount: number }> {
+  const asCustomer = { Authorization: `Bearer ${customer.accessToken}` };
+  const asDriver = { Authorization: `Bearer ${driver.accessToken}` };
+
+  const booking = await http(harness)
+    .post(`${API}/mobile/customer/deliveries`)
+    .set(asCustomer)
+    .send({
+      pickup: {
+        address: 'Independence Monument',
+        latitude: 11.5564,
+        longitude: 104.9282,
+        contactName: 'Sok Dara',
+        contactPhone: '012345678',
+      },
+      dropoff: {
+        address: 'Chak Angrae',
+        latitude: 11.5,
+        longitude: 104.87,
+        contactName: 'Chan Vuthy',
+        contactPhone: '012999888',
+      },
+      vehicleTypeId,
+      currency: 'KHR',
+      packages: [{ size: 'SMALL', weightKg: 2 }],
+      paymentMethod: 'CASH_ON_DELIVERY',
+    })
+    .expect(201);
+
+  const deliveryId = booking.body.data.id as string;
+
+  await harness.matching.runRound(deliveryId, 1);
+  await http(harness).post(`${API}/mobile/driver/jobs/${deliveryId}/accept`).set(asDriver).expect(200);
+
+  for (const step of ['arrive-pickup', 'confirm-pickup', 'arrive-dropoff']) {
+    await http(harness).post(`${API}/mobile/driver/jobs/${deliveryId}/${step}`).set(asDriver).send({}).expect(200);
+  }
+
+  const upload = await http(harness)
+    .post(`${API}/mobile/uploads`)
+    .set(asDriver)
+    .attach('file', pngFixture(), { filename: 'pod.png', contentType: 'image/png' })
+    .field('purpose', 'PROOF_OF_DELIVERY')
+    .expect(201);
+
+  await http(harness)
+    .post(`${API}/mobile/driver/jobs/${deliveryId}/proof-of-delivery`)
+    .set(asDriver)
+    .send({ photoFileId: upload.body.data.id })
+    .expect(201);
+
+  await http(harness).post(`${API}/mobile/driver/jobs/${deliveryId}/complete`).set(asDriver).send({}).expect(200);
+
+  const earning = await harness.prisma.driverEarning.findUniqueOrThrow({ where: { deliveryId } });
+
+  return {
+    deliveryId,
+    bookingCode: booking.body.data.bookingCode as string,
+    netAmount: earning.netAmount,
+  };
+}
