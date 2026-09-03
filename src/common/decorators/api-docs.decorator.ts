@@ -1,7 +1,7 @@
 import { type Type, applyDecorators } from '@nestjs/common';
 import { ApiExtraModels, ApiResponse, getSchemaPath } from '@nestjs/swagger';
 import { ApiErrorDto, CursorMetaDto, PageMetaDto } from '../dto/api-response.dto.js';
-import { type ResponseCode, messageForCode } from '../constants/response-codes.js';
+import { type ResponseCode, messageForCode, successMessageForCode } from '../constants/response-codes.js';
 
 interface SuccessDocOptions<T> {
   status?: number;
@@ -24,12 +24,12 @@ export function ApiSuccessResponse<T>(options: SuccessDocOptions<T>) {
     ...(type ? [ApiExtraModels(type)] : []),
     ApiResponse({
       status,
-      description: description ?? messageForCode(code),
+      description: description ?? successMessageForCode(code),
       schema: {
         properties: {
           success: { type: 'boolean', example: true },
           code: { type: 'string', example: code },
-          message: { type: 'string', example: messageForCode(code) },
+          message: { type: 'string', example: successMessageForCode(code) },
           data: dataSchema,
           meta: { type: 'object', nullable: true, example: null },
         },
@@ -46,12 +46,12 @@ export function ApiPaginatedResponse<T>(options: { code: ResponseCode; type: Typ
     ApiExtraModels(type, cursor ? CursorMetaDto : PageMetaDto),
     ApiResponse({
       status: 200,
-      description: messageForCode(code),
+      description: successMessageForCode(code),
       schema: {
         properties: {
           success: { type: 'boolean', example: true },
           code: { type: 'string', example: code },
-          message: { type: 'string', example: messageForCode(code) },
+          message: { type: 'string', example: successMessageForCode(code) },
           data: { type: 'array', items: { $ref: getSchemaPath(type) } },
           meta: { $ref: getSchemaPath(cursor ? CursorMetaDto : PageMetaDto) },
         },
@@ -73,7 +73,7 @@ export function ApiErrorResponses(...errors: ErrorDoc[]) {
     ...errors.map(({ status, code, description }) =>
       ApiResponse({
         status,
-        description: description ?? messageForCode(code),
+        description: description ?? successMessageForCode(code),
         schema: {
           properties: {
             success: { type: 'boolean', example: false },

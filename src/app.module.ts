@@ -13,9 +13,15 @@ import { RequestContextMiddleware } from './common/middleware/request-context.mi
 import { AppConfigModule } from './config/config.module.js';
 import { PrismaModule } from './database/prisma.module.js';
 import { RedisModule } from './redis/redis.module.js';
+import { AddressesModule } from './modules/addresses/addresses.module.js';
 import { AuthModule } from './modules/auth/auth.module.js';
+import { CustomersModule } from './modules/customers/customers.module.js';
+import { DriversModule } from './modules/drivers/drivers.module.js';
 import { HealthModule } from './modules/health/health.module.js';
+import { StorageModule } from './modules/storage/storage.module.js';
+import { UploadsModule } from './modules/uploads/uploads.module.js';
 import { UsersModule } from './modules/users/users.module.js';
+import { VehicleTypesModule } from './modules/vehicle-types/vehicle-types.module.js';
 
 @Module({
   imports: [
@@ -28,8 +34,14 @@ import { UsersModule } from './modules/users/users.module.js';
     EventEmitterModule.forRoot({ wildcard: false, delimiter: '.', maxListeners: 20, verboseMemoryLeak: true }),
     PrismaModule,
     RedisModule,
+    StorageModule,
+    UploadsModule,
     UsersModule,
     AuthModule,
+    CustomersModule,
+    AddressesModule,
+    DriversModule,
+    VehicleTypesModule,
     HealthModule,
   ],
   providers: [

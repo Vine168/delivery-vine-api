@@ -290,13 +290,22 @@ export const RESPONSE_MESSAGES: Partial<Record<ResponseCode, string>> = {
   WITHDRAWAL_SETTINGS_REQUIRED: 'Please add your bank account details before requesting a withdrawal.',
 };
 
-/** `DELIVERY_CREATED` → `Delivery created successfully.` */
+/** `DELIVERY_CREATED` → `Delivery created`. No trailing punctuation. */
 export function humaniseCode(code: string): string {
-  const words = code.toLowerCase().split('_');
-  const sentence = words.join(' ');
-  return `${sentence.charAt(0).toUpperCase()}${sentence.slice(1)} successfully.`;
+  const sentence = code.toLowerCase().split('_').join(' ');
+  return `${sentence.charAt(0).toUpperCase()}${sentence.slice(1)}`;
 }
 
+/**
+ * Message for a failure. Never says "successfully" — a humanised
+ * `ADDRESS_NOT_FOUND` must read "Address not found.", not
+ * "Address not found successfully."
+ */
 export function messageForCode(code: ResponseCode): string {
-  return RESPONSE_MESSAGES[code] ?? humaniseCode(code);
+  return RESPONSE_MESSAGES[code] ?? `${humaniseCode(code)}.`;
+}
+
+/** Message for a success envelope, where "successfully" reads naturally. */
+export function successMessageForCode(code: ResponseCode): string {
+  return RESPONSE_MESSAGES[code] ?? `${humaniseCode(code)} successfully.`;
 }

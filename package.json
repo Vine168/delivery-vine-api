@@ -24,14 +24,15 @@
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "db:reset": "prisma migrate reset --force",
-    "db:seed": "node --experimental-strip-types prisma/seed.ts",
+    "db:seed": "npm run build && node dist/database/seed.js",
     "db:studio": "prisma studio",
     "db:test:deploy": "NODE_ENV=test prisma migrate deploy",
     "typecheck": "tsc -p tsconfig.build.json --noEmit",
     "check": "npm run typecheck && npm run lint && npm run test",
     "infra:up": "docker compose up -d",
     "infra:down": "docker compose down",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "db:test:seed": "npm run build && NODE_ENV=test node dist/database/seed.js"
   },
   "dependencies": {
     "@nestjs/axios": "^12.0.0",
@@ -77,6 +78,7 @@
     "@nestjs/schematics": "^12.0.0",
     "@nestjs/testing": "^12.0.1",
     "@types/express": "^5.0.0",
+    "@types/multer": "^2.2.0",
     "@types/node": "^24.0.0",
     "@types/passport-jwt": "^4.0.1",
     "@types/supertest": "^7.0.0",
@@ -90,8 +92,5 @@
     "typescript": "^6.0.2",
     "vite-tsconfig-paths": "^5.1.4",
     "vitest": "^4.1.2"
-  },
-  "prisma": {
-    "seed": "node --experimental-strip-types prisma/seed.ts"
   }
 }

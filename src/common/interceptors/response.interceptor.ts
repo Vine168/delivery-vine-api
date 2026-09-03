@@ -9,7 +9,7 @@ import { Reflector } from '@nestjs/core';
 import type { Response } from 'express';
 import { map, type Observable } from 'rxjs';
 import { METADATA_KEY } from '../constants/app.constants.js';
-import { ResponseCode, messageForCode } from '../constants/response-codes.js';
+import { ResponseCode, successMessageForCode } from '../constants/response-codes.js';
 import { isPaginatedResult } from '../interfaces/paginated.interface.js';
 
 interface Envelope {
@@ -59,7 +59,7 @@ export class ResponseInterceptor implements NestInterceptor {
         const envelope: Envelope = {
           success: true,
           code,
-          message: handlerMessage ?? messageForCode(code),
+          message: handlerMessage ?? successMessageForCode(code),
           data: null,
           meta: null,
         };
