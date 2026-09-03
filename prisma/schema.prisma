@@ -1,0 +1,1366 @@
+// ════════════════════════════════════════════════════════════════════════════
+//  Deliver — delivery platform schema
+//
+//  Conventions
+//  ───────────
+//  • Money is ALWAYS an Int in the currency's minor unit + an explicit
+//    `Currency`. KHR has scale 0 (1 = 1 riel), USD scale 2 (1 = 1 cent).
+//    Never Float. See src/common/utils/money.util.ts.
+//  • Percentages are integer basis points (bp). 2000 bp = 20.00%.
+//  • Coordinates are Float (IEEE double) — precision far exceeds GPS accuracy.
+//  • Public identifiers (bookingCode) are separate from primary keys (cuid2).
+//  • Completed financial records are immutable snapshots: they never re-read
+//    current pricing rules.
+// ════════════════════════════════════════════════════════════════════════════
+
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "esm"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ═══════════════════════════ ENUMS ═══════════════════════════
+
+enum UserRole {
+  CUSTOMER
+  DRIVER
+  ADMIN
+}
+
+enum UserStatus {
+  PENDING_VERIFICATION
+  ACTIVE
+  SUSPENDED
+  DEACTIVATED
+}
+
+enum DevicePlatform {
+  IOS
+  ANDROID
+  WEB
+}
+
+enum PushProvider {
+  FCM
+  APNS
+}
+
+enum OtpChannel {
+  SMS
+  EMAIL
+}
+
+enum OtpPurpose {
+  REGISTRATION
+  LOGIN
+  PASSWORD_RESET
+  PHONE_CHANGE
+}
+
+enum Currency {
+  KHR
+  USD
+}
+
+enum AddressLabel {
+  HOME
+  OFFICE
+  OTHER
+}
+
+/// Account standing of a driver — NOT their working availability.
+enum DriverApprovalStatus {
+  PENDING_APPROVAL
+  ACTIVE
+  SUSPENDED
+  REJECTED
+}
+
+/// Working availability of a driver — NOT their account standing.
+/// BUSY is set by the server while an assignment is active; never by the app.
+enum DriverAvailabilityStatus {
+  ONLINE
+  OFFLINE
+  BUSY
+}
+
+enum DriverDocumentType {
+  NATIONAL_ID_FRONT
+  NATIONAL_ID_BACK
+  DRIVER_LICENSE_FRONT
+  DRIVER_LICENSE_BACK
+  VEHICLE_REGISTRATION
+  VEHICLE_PHOTO
+  INSURANCE
+  OTHER
+}
+
+enum DocumentReviewStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  EXPIRED
+}
+
+/// The delivery lifecycle. Transitions are enforced by DeliveryStateService —
+/// never by the client. See src/modules/deliveries/delivery-state.policy.ts.
+enum DeliveryStatus {
+  DRAFT
+  SEARCHING_DRIVER
+  DRIVER_ASSIGNED
+  ARRIVED_PICKUP
+  PICKED_UP
+  IN_TRANSIT
+  ARRIVED_DROPOFF
+  DELIVERED
+  CANCELLED
+  EXPIRED
+}
+
+enum ActorType {
+  CUSTOMER
+  DRIVER
+  ADMIN
+  SYSTEM
+}
+
+enum PackageSize {
+  SMALL
+  MEDIUM
+  LARGE
+  EXTRA_LARGE
+}
+
+enum AssignmentStatus {
+  OFFERED
+  ACCEPTED
+  DECLINED
+  EXPIRED
+  CANCELLED
+  COMPLETED
+}
+
+enum DiscountType {
+  PERCENTAGE
+  FIXED_AMOUNT
+}
+
+enum PaymentMethod {
+  CASH_ON_DELIVERY
+  ABA_KHQR
+  WALLET
+}
+
+enum PaymentProvider {
+  CASH
+  ABA_KHQR
+  INTERNAL
+}
+
+enum PaymentStatus {
+  PENDING
+  AWAITING_PAYMENT
+  PAID
+  FAILED
+  EXPIRED
+  CANCELLED
+  REFUNDED
+}
+
+enum PaymentTransactionType {
+  CHARGE
+  VERIFY
+  REFUND
+  WEBHOOK
+}
+
+enum CodPayer {
+  SENDER
+  RECIPIENT
+}
+
+enum WalletTransactionType {
+  DELIVERY_EARNING
+  COMMISSION
+  TOP_UP
+  WITHDRAWAL
+  WITHDRAWAL_REVERSAL
+  ADJUSTMENT
+  REFUND
+  BONUS
+}
+
+enum LedgerDirection {
+  CREDIT
+  DEBIT
+}
+
+enum WalletTransactionStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REVERSED
+}
+
+enum EarningStatus {
+  PENDING
+  AVAILABLE
+  PAID
+}
+
+enum WithdrawalStatus {
+  PENDING
+  APPROVED
+  PROCESSING
+  SUCCESS
+  FAILED
+  REJECTED
+  CANCELLED
+}
+
+enum WithdrawalMethod {
+  BANK_TRANSFER
+  KHQR
+}
+
+enum MessageType {
+  TEXT
+  IMAGE
+  LOCATION
+  SYSTEM
+}
+
+enum NotificationType {
+  DELIVERY_CREATED
+  DRIVER_ASSIGNED
+  DRIVER_ARRIVED_PICKUP
+  PACKAGE_PICKED_UP
+  DELIVERY_IN_TRANSIT
+  DRIVER_ARRIVED_DROPOFF
+  DELIVERY_COMPLETED
+  DELIVERY_CANCELLED
+  NEW_JOB_REQUEST
+  JOB_REQUEST_EXPIRED
+  PAYMENT_STATUS_UPDATED
+  WITHDRAWAL_STATUS_UPDATED
+  WALLET_CREDITED
+  DOCUMENT_REVIEWED
+  ACCOUNT_STATUS_CHANGED
+  CHAT_MESSAGE
+  PROMOTION
+  SYSTEM_ANNOUNCEMENT
+}
+
+enum PushDispatchStatus {
+  PENDING
+  SENT
+  FAILED
+  SKIPPED
+}
+
+enum FileVisibility {
+  PUBLIC
+  PRIVATE
+}
+
+enum FilePurpose {
+  CUSTOMER_AVATAR
+  DRIVER_AVATAR
+  DRIVER_DOCUMENT
+  VEHICLE_PHOTO
+  PACKAGE_PHOTO
+  PROOF_OF_DELIVERY
+  KHQR_IMAGE
+  CHAT_ATTACHMENT
+}
+
+enum FileUploadStatus {
+  PENDING
+  UPLOADED
+  FAILED
+}
+
+// ═══════════════════ IDENTITY & ACCESS ═══════════════════
+
+model User {
+  id              String     @id @default(cuid(2))
+  phone           String
+  email           String?
+  passwordHash    String?
+  role            UserRole
+  status          UserStatus @default(PENDING_VERIFICATION)
+  phoneVerifiedAt DateTime?
+  emailVerifiedAt DateTime?
+  lastLoginAt     DateTime?
+  suspendedReason String?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+  deletedAt       DateTime?
+
+  customerProfile CustomerProfile?
+  driverProfile   DriverProfile?
+  refreshTokens   RefreshToken[]
+  sessions        UserSession[]
+  devices         Device[]
+  notifications   Notification[]
+  wallets         Wallet[]
+  uploadedFiles   FileAsset[]
+  messages        Message[]
+  participations  ConversationParticipant[]
+  reviewedDocs    DriverDocument[]          @relation("DocumentReviewer")
+  statusChanges   DeliveryStatusHistory[]   @relation("StatusActor")
+  idempotencyKeys IdempotencyKey[]
+
+  /// One phone may hold one CUSTOMER account and one DRIVER account.
+  @@unique([phone, role])
+  @@unique([email, role])
+  @@index([status])
+  @@index([deletedAt])
+}
+
+/// Refresh tokens are rotated on every use. A whole family is revoked when a
+/// token is replayed (reuse detection).
+model RefreshToken {
+  id           String    @id @default(cuid(2))
+  userId       String
+  sessionId    String
+  tokenHash    String    @unique
+  familyId     String
+  expiresAt    DateTime
+  revokedAt    DateTime?
+  replacedById String?
+  createdAt    DateTime  @default(now())
+
+  user    User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  session UserSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([familyId])
+  @@index([expiresAt])
+}
+
+model UserSession {
+  id         String    @id @default(cuid(2))
+  userId     String
+  deviceId   String?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime  @default(now())
+  lastSeenAt DateTime  @default(now())
+  revokedAt  DateTime?
+
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  device        Device?        @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+  refreshTokens RefreshToken[]
+
+  @@index([userId, revokedAt])
+}
+
+model Device {
+  id             String         @id @default(cuid(2))
+  userId         String
+  installationId String
+  platform       DevicePlatform
+  model          String?
+  osVersion      String?
+  appVersion     String?
+  locale         String?
+  lastSeenAt     DateTime       @default(now())
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  user       User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  pushTokens DevicePushToken[]
+  sessions   UserSession[]
+
+  @@unique([userId, installationId])
+  @@index([userId])
+}
+
+model DevicePushToken {
+  id         String       @id @default(cuid(2))
+  deviceId   String
+  provider   PushProvider @default(FCM)
+  token      String       @unique
+  isActive   Boolean      @default(true)
+  lastUsedAt DateTime?
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+
+  device     Device         @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  dispatches PushDispatch[]
+
+  @@index([deviceId, isActive])
+}
+
+/// Audit trail of OTP issuance and verification. The live code lives in Redis
+/// with a TTL; only its hash is persisted here, never the plaintext.
+model OtpVerification {
+  id                    String     @id @default(cuid(2))
+  identifier            String
+  channel               OtpChannel
+  purpose               OtpPurpose
+  codeHash              String
+  attempts              Int        @default(0)
+  maxAttempts           Int        @default(5)
+  resendCount           Int        @default(0)
+  expiresAt             DateTime
+  verifiedAt            DateTime?
+  consumedAt            DateTime?
+  /// Short-lived proof issued after a successful verify; spent by
+  /// set-password / reset-password. Hashed, never returned twice.
+  verificationTokenHash String?
+  verificationExpiresAt DateTime?
+  ipAddress             String?
+  createdAt             DateTime   @default(now())
+
+  @@index([identifier, purpose, createdAt])
+  @@index([verificationTokenHash])
+  @@index([expiresAt])
+}
+
+/// Guards against duplicate POSTs (booking creation, payments) from mobile
+/// clients on flaky networks.
+model IdempotencyKey {
+  id           String    @id @default(cuid(2))
+  key          String
+  userId       String
+  endpoint     String
+  requestHash  String
+  statusCode   Int?
+  responseBody Json?
+  completedAt  DateTime?
+  expiresAt    DateTime
+  createdAt    DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, key, endpoint])
+  @@index([expiresAt])
+}
+
+// ═══════════════════ CUSTOMER ═══════════════════
+
+model CustomerProfile {
+  id           String    @id @default(cuid(2))
+  userId       String    @unique
+  fullName     String
+  avatarFileId String?
+  dateOfBirth  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  avatarFile       FileAsset?        @relation("CustomerAvatar", fields: [avatarFileId], references: [id], onDelete: SetNull)
+  addresses        CustomerAddress[]
+  favoriteDrivers  FavoriteDriver[]
+  packageTemplates PackageTemplate[]
+  deliveries       Delivery[]
+  ratings          DeliveryRating[]
+  promoUsages      PromoCodeUsage[]
+  conversations    Conversation[]
+}
+
+model CustomerAddress {
+  id           String       @id @default(cuid(2))
+  customerId   String
+  label        AddressLabel @default(OTHER)
+  title        String?
+  addressLine  String
+  latitude     Float
+  longitude    Float
+  placeId      String?
+  contactName  String
+  contactPhone String
+  remarks      String?
+  isDefault    Boolean      @default(false)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  deletedAt    DateTime?
+
+  customer CustomerProfile @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId, deletedAt])
+}
+
+model FavoriteDriver {
+  id         String   @id @default(cuid(2))
+  customerId String
+  driverId   String
+  createdAt  DateTime @default(now())
+
+  customer CustomerProfile @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  driver   DriverProfile   @relation(fields: [driverId], references: [id], onDelete: Cascade)
+
+  @@unique([customerId, driverId])
+  @@index([driverId])
+}
+
+model PackageTemplate {
+  id          String      @id @default(cuid(2))
+  customerId  String
+  name        String
+  size        PackageSize
+  weightKg    Float?
+  category    String?
+  description String?
+  remarks     String?
+  photoFileId String?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  deletedAt   DateTime?
+
+  customer  CustomerProfile @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  photoFile FileAsset?      @relation("PackageTemplatePhoto", fields: [photoFileId], references: [id], onDelete: SetNull)
+
+  @@index([customerId, deletedAt])
+}
+
+// ═══════════════════ DRIVER ═══════════════════
+
+model DriverProfile {
+  id                  String               @id @default(cuid(2))
+  userId              String               @unique
+  fullName            String
+  avatarFileId        String?
+  approvalStatus      DriverApprovalStatus @default(PENDING_APPROVAL)
+  approvedAt          DateTime?
+  rejectedReason      String?
+  suspendedReason     String?
+  /// Aggregates maintained by the rating / delivery services.
+  ratingAverage       Decimal              @default(0) @db.Decimal(3, 2)
+  ratingCount         Int                  @default(0)
+  completedDeliveries Int                  @default(0)
+  cancelledDeliveries Int                  @default(0)
+  offeredJobs         Int                  @default(0)
+  acceptedJobs        Int                  @default(0)
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  deletedAt           DateTime?
+
+  user           User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  avatarFile     FileAsset?            @relation("DriverAvatar", fields: [avatarFileId], references: [id], onDelete: SetNull)
+  availability   DriverAvailability?
+  paymentSetting DriverPaymentSetting?
+  lastLocation   DriverLocation?
+  vehicles       DriverVehicle[]
+  documents      DriverDocument[]
+  onlineSessions DriverOnlineSession[]
+  deliveries     Delivery[]
+  assignments    DeliveryAssignment[]
+  earnings       DriverEarning[]
+  withdrawals    Withdrawal[]
+  ratings        DeliveryRating[]
+  favoritedBy    FavoriteDriver[]
+  proofs         ProofOfDelivery[]
+  conversations  Conversation[]
+
+  @@index([approvalStatus])
+  @@index([deletedAt])
+}
+
+model DriverAvailability {
+  id            String                   @id @default(cuid(2))
+  driverId      String                   @unique
+  status        DriverAvailabilityStatus @default(OFFLINE)
+  onlineSinceAt DateTime?
+  lastOnlineAt  DateTime?
+  lastOfflineAt DateTime?
+  updatedAt     DateTime                 @updatedAt
+
+  driver DriverProfile @relation(fields: [driverId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+}
+
+/// One row per online period — the source for "online duration" on the driver
+/// dashboard, without recomputing from an event stream.
+model DriverOnlineSession {
+  id              String    @id @default(cuid(2))
+  driverId        String
+  startedAt       DateTime  @default(now())
+  endedAt         DateTime?
+  durationSeconds Int?
+
+  driver DriverProfile @relation(fields: [driverId], references: [id], onDelete: Cascade)
+
+  @@index([driverId, startedAt])
+}
+
+model VehicleType {
+  id             String   @id @default(cuid(2))
+  code           String   @unique
+  name           String
+  nameKm         String?
+  description    String?
+  iconUrl        String?
+  maxWeightKg    Float?
+  maxPackages    Int?
+  /// Profile passed to the map provider for routing (MOTOR, CAR, CYCLE…).
+  routingProfile String   @default("MOTOR")
+  sortOrder      Int      @default(0)
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  vehicles     DriverVehicle[]
+  pricingRules PricingRule[]
+  deliveries   Delivery[]
+  promoCodes   PromoCodeVehicleType[]
+
+  @@index([isActive, sortOrder])
+}
+
+model DriverVehicle {
+  id            String               @id @default(cuid(2))
+  driverId      String
+  vehicleTypeId String
+  plateNumber   String
+  brand         String?
+  model         String?
+  color         String?
+  year          Int?
+  photoFileId   String?
+  isPrimary     Boolean              @default(true)
+  status        DocumentReviewStatus @default(PENDING)
+  reviewNote    String?
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+  deletedAt     DateTime?
+
+  driver      DriverProfile @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  vehicleType VehicleType   @relation(fields: [vehicleTypeId], references: [id])
+  photoFile   FileAsset?    @relation("VehiclePhoto", fields: [photoFileId], references: [id], onDelete: SetNull)
+  deliveries  Delivery[]
+
+  @@unique([driverId, plateNumber])
+  @@index([driverId, deletedAt])
+}
+
+model DriverDocument {
+  id               String               @id @default(cuid(2))
+  driverId         String
+  type             DriverDocumentType
+  fileId           String
+  status           DocumentReviewStatus @default(PENDING)
+  reviewedByUserId String?
+  reviewedAt       DateTime?
+  reviewNote       String?
+  expiresAt        DateTime?
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+
+  driver     DriverProfile @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  file       FileAsset     @relation("DriverDocumentFile", fields: [fileId], references: [id])
+  reviewedBy User?         @relation("DocumentReviewer", fields: [reviewedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([driverId, type])
+  @@index([status])
+}
+
+model DriverPaymentSetting {
+  id                 String   @id @default(cuid(2))
+  driverId           String   @unique
+  bankName           String?
+  accountHolderName  String?
+  /// Stored encrypted at rest; only the last 4 digits are ever returned.
+  accountNumberEnc   String?
+  accountNumberLast4 String?
+  khqrFileId         String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  driver   DriverProfile @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  khqrFile FileAsset?    @relation("DriverKhqr", fields: [khqrFileId], references: [id], onDelete: SetNull)
+}
+
+/// Last known position, refreshed on a throttle. The hot path is Redis
+/// (GEO index + presence); this row survives restarts and feeds analytics.
+model DriverLocation {
+  id         String   @id @default(cuid(2))
+  driverId   String   @unique
+  latitude   Float
+  longitude  Float
+  heading    Float?
+  speed      Float?
+  accuracy   Float?
+  recordedAt DateTime
+  updatedAt  DateTime @updatedAt
+
+  driver DriverProfile @relation(fields: [driverId], references: [id], onDelete: Cascade)
+
+  @@index([recordedAt])
+}
+
+/// Breadcrumb trail, written only while a delivery is in flight and only at a
+/// throttled interval — never every GPS ping.
+model DeliveryTrackPoint {
+  id         String   @id @default(cuid(2))
+  deliveryId String
+  latitude   Float
+  longitude  Float
+  heading    Float?
+  speed      Float?
+  recordedAt DateTime
+
+  delivery Delivery @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+
+  @@index([deliveryId, recordedAt])
+}
+
+// ═══════════════════ DELIVERY ═══════════════════
+
+model Delivery {
+  id              String         @id @default(cuid(2))
+  /// Public, human-readable identifier: ORD-20260903-00128. Never a foreign key.
+  bookingCode     String         @unique
+  customerId      String
+  driverId        String?
+  vehicleTypeId   String
+  driverVehicleId String?
+  status          DeliveryStatus @default(DRAFT)
+
+  // ── Pickup (immutable snapshot of the location at booking time) ──
+  pickupAddress      String
+  pickupLatitude     Float
+  pickupLongitude    Float
+  pickupPlaceId      String?
+  pickupContactName  String
+  pickupContactPhone String
+  pickupNote         String?
+
+  // ── Dropoff ──
+  dropoffAddress      String
+  dropoffLatitude     Float
+  dropoffLongitude    Float
+  dropoffPlaceId      String?
+  dropoffContactName  String
+  dropoffContactPhone String
+  dropoffNote         String?
+
+  // ── Route estimate from the map provider ──
+  distanceMeters       Int
+  durationSeconds      Int
+  routePolyline        String?
+  routeProvider        String?
+  actualDistanceMeters Int?
+
+  // ── Price snapshot. Immutable once the delivery is confirmed. ──
+  currency            Currency
+  baseFare            Int
+  distanceFare        Int      @default(0)
+  timeFare            Int      @default(0)
+  waitingFee          Int      @default(0)
+  surgeAmount         Int      @default(0)
+  serviceFee          Int      @default(0)
+  codFee              Int      @default(0)
+  subtotalAmount      Int
+  discountAmount      Int      @default(0)
+  totalAmount         Int
+  commissionPercentBp Int      @default(0)
+  commissionAmount    Int      @default(0)
+  driverEarningAmount Int      @default(0)
+  pricingRuleId       String?
+  /// Full, human-readable breakdown as calculated — kept for dispute audit.
+  pricingSnapshot     Json?
+  promoCodeId         String?
+
+  // ── Payment ──
+  paymentMethod  PaymentMethod
+  paymentStatus  PaymentStatus @default(PENDING)
+  codEnabled     Boolean       @default(false)
+  codAmount      Int?
+  codCurrency    Currency?
+  codPayer       CodPayer?
+  codCollectedAt DateTime?
+
+  customerNote String?
+
+  // ── Matching ──
+  searchRound     Int       @default(0)
+  searchStartedAt DateTime?
+  searchExpiresAt DateTime?
+
+  // ── Cancellation ──
+  cancelledByType   ActorType?
+  cancelledByUserId String?
+  cancelReason      String?
+
+  // ── Lifecycle timestamps ──
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  confirmedAt      DateTime?
+  assignedAt       DateTime?
+  arrivedPickupAt  DateTime?
+  pickedUpAt       DateTime?
+  inTransitAt      DateTime?
+  arrivedDropoffAt DateTime?
+  deliveredAt      DateTime?
+  cancelledAt      DateTime?
+  expiredAt        DateTime?
+  deletedAt        DateTime?
+
+  customer      CustomerProfile         @relation(fields: [customerId], references: [id])
+  driver        DriverProfile?          @relation(fields: [driverId], references: [id])
+  vehicleType   VehicleType             @relation(fields: [vehicleTypeId], references: [id])
+  driverVehicle DriverVehicle?          @relation(fields: [driverVehicleId], references: [id])
+  pricingRule   PricingRule?            @relation(fields: [pricingRuleId], references: [id])
+  promoCode     PromoCode?              @relation(fields: [promoCodeId], references: [id])
+  recipient     DeliveryRecipient?
+  packages      DeliveryPackage[]
+  statusHistory DeliveryStatusHistory[]
+  assignments   DeliveryAssignment[]
+  trackPoints   DeliveryTrackPoint[]
+  payments      Payment[]
+  rating        DeliveryRating?
+  earning       DriverEarning?
+  proof         ProofOfDelivery?
+  conversation  Conversation?
+  promoUsage    PromoCodeUsage?
+  notifications Notification[]
+
+  @@index([customerId, createdAt])
+  @@index([driverId, status])
+  @@index([status, createdAt])
+  @@index([status])
+  @@index([createdAt])
+  @@index([paymentStatus])
+  @@index([deletedAt])
+}
+
+model DeliveryRecipient {
+  id             String   @id @default(cuid(2))
+  deliveryId     String   @unique
+  name           String
+  phone          String
+  alternatePhone String?
+  note           String?
+  /// Filled at proof-of-delivery time — who actually took the package.
+  receivedByName String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  delivery Delivery @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+}
+
+model DeliveryPackage {
+  id                    String      @id @default(cuid(2))
+  deliveryId            String
+  size                  PackageSize
+  quantity              Int         @default(1)
+  weightKg              Float?
+  category              String?
+  description           String?
+  remarks               String?
+  declaredValueAmount   Int?
+  declaredValueCurrency Currency?
+  photoFileId           String?
+  createdAt             DateTime    @default(now())
+
+  delivery  Delivery   @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+  photoFile FileAsset? @relation("PackagePhoto", fields: [photoFileId], references: [id], onDelete: SetNull)
+
+  @@index([deliveryId])
+}
+
+/// Append-only audit of every accepted transition. Written inside the same
+/// transaction as the status change itself.
+model DeliveryStatusHistory {
+  id          String          @id @default(cuid(2))
+  deliveryId  String
+  fromStatus  DeliveryStatus?
+  toStatus    DeliveryStatus
+  actorType   ActorType
+  actorUserId String?
+  reason      String?
+  metadata    Json?
+  createdAt   DateTime        @default(now())
+
+  delivery Delivery @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+  actor    User?    @relation("StatusActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([deliveryId, createdAt])
+}
+
+/// One row per offer made to a driver. A partial unique index (added in a
+/// follow-up migration) allows at most ONE ACCEPTED row per delivery and at
+/// most ONE ACCEPTED row per driver — the database is the final arbiter of the
+/// accept race.
+model DeliveryAssignment {
+  id                       String           @id @default(cuid(2))
+  deliveryId               String
+  driverId                 String
+  status                   AssignmentStatus @default(OFFERED)
+  round                    Int              @default(1)
+  offeredAt                DateTime         @default(now())
+  expiresAt                DateTime
+  respondedAt              DateTime?
+  declineReason            String?
+  distanceToPickupMeters   Int?
+  estimatedEarningAmount   Int?
+  estimatedEarningCurrency Currency?
+  createdAt                DateTime         @default(now())
+  updatedAt                DateTime         @updatedAt
+
+  delivery Delivery      @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+  driver   DriverProfile @relation(fields: [driverId], references: [id], onDelete: Cascade)
+
+  @@unique([deliveryId, driverId, round])
+  @@index([driverId, status])
+  @@index([deliveryId, status])
+  @@index([expiresAt])
+}
+
+model ProofOfDelivery {
+  id              String   @id @default(cuid(2))
+  deliveryId      String   @unique
+  driverId        String
+  photoFileId     String
+  signatureFileId String?
+  note            String?
+  recipientName   String?
+  latitude        Float?
+  longitude       Float?
+  capturedAt      DateTime
+  createdAt       DateTime @default(now())
+
+  delivery      Delivery      @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+  driver        DriverProfile @relation(fields: [driverId], references: [id])
+  photoFile     FileAsset     @relation("PodPhoto", fields: [photoFileId], references: [id])
+  signatureFile FileAsset?    @relation("PodSignature", fields: [signatureFileId], references: [id], onDelete: SetNull)
+}
+
+model DeliveryRating {
+  id         String   @id @default(cuid(2))
+  deliveryId String   @unique
+  customerId String
+  driverId   String
+  rating     Int
+  comment    String?
+  tags       String[]
+  createdAt  DateTime @default(now())
+
+  delivery Delivery        @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+  customer CustomerProfile @relation(fields: [customerId], references: [id])
+  driver   DriverProfile   @relation(fields: [driverId], references: [id])
+
+  @@index([driverId, createdAt])
+}
+
+// ═══════════════════ PRICING & PROMOTION ═══════════════════
+
+/// Prices live in data, never in service code. The highest-priority active rule
+/// matching (vehicleType, zone, currency, time window) wins; a delivery stores
+/// the id AND the resulting amounts, so later edits never rewrite history.
+model PricingRule {
+  id                     String    @id @default(cuid(2))
+  name                   String
+  vehicleTypeId          String
+  zoneId                 String?
+  currency               Currency
+  baseFare               Int
+  includedDistanceMeters Int       @default(0)
+  pricePerKm             Int       @default(0)
+  pricePerMinute         Int       @default(0)
+  minimumFare            Int       @default(0)
+  waitingFeePerMinute    Int       @default(0)
+  freeWaitingSeconds     Int       @default(300)
+  serviceFeeFlat         Int       @default(0)
+  serviceFeePercentBp    Int       @default(0)
+  codFeeFlat             Int       @default(0)
+  codFeePercentBp        Int       @default(0)
+  commissionPercentBp    Int       @default(0)
+  minCommission          Int?
+  maxCommission          Int?
+  /// Multiplier in basis points: 10000 = 1.00x, 12500 = 1.25x surge.
+  surgeMultiplierBp      Int       @default(10000)
+  priority               Int       @default(0)
+  isActive               Boolean   @default(true)
+  effectiveFrom          DateTime  @default(now())
+  effectiveTo            DateTime?
+  version                Int       @default(1)
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+
+  vehicleType VehicleType @relation(fields: [vehicleTypeId], references: [id])
+  zone        Zone?       @relation(fields: [zoneId], references: [id])
+  deliveries  Delivery[]
+
+  @@index([isActive, priority])
+  @@index([vehicleTypeId, currency, isActive])
+}
+
+model Zone {
+  id        String   @id @default(cuid(2))
+  code      String   @unique
+  name      String
+  /// GeoJSON polygon. Point-in-polygon is done in SQL; PostGIS can replace
+  /// this later without touching the pricing API.
+  boundary  Json?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  pricingRules PricingRule[]
+}
+
+model PromoCode {
+  id                String       @id @default(cuid(2))
+  code              String       @unique
+  name              String
+  description       String?
+  currency          Currency
+  discountType      DiscountType
+  /// Basis points when PERCENTAGE, minor units when FIXED_AMOUNT.
+  discountValue     Int
+  maxDiscountAmount Int?
+  minOrderAmount    Int?
+  startsAt          DateTime
+  endsAt            DateTime
+  usageLimit        Int?
+  usageCount        Int          @default(0)
+  perCustomerLimit  Int?         @default(1)
+  isActive          Boolean      @default(true)
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+  deletedAt         DateTime?
+
+  vehicleTypes PromoCodeVehicleType[]
+  usages       PromoCodeUsage[]
+  deliveries   Delivery[]
+
+  @@index([isActive, startsAt, endsAt])
+}
+
+/// Empty set = the promo applies to every vehicle type.
+model PromoCodeVehicleType {
+  promoCodeId   String
+  vehicleTypeId String
+
+  promoCode   PromoCode   @relation(fields: [promoCodeId], references: [id], onDelete: Cascade)
+  vehicleType VehicleType @relation(fields: [vehicleTypeId], references: [id], onDelete: Cascade)
+
+  @@id([promoCodeId, vehicleTypeId])
+}
+
+model PromoCodeUsage {
+  id             String   @id @default(cuid(2))
+  promoCodeId    String
+  customerId     String
+  deliveryId     String   @unique
+  discountAmount Int
+  currency       Currency
+  createdAt      DateTime @default(now())
+
+  promoCode PromoCode       @relation(fields: [promoCodeId], references: [id], onDelete: Cascade)
+  customer  CustomerProfile @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  delivery  Delivery        @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+
+  @@index([promoCodeId, customerId])
+}
+
+/// Snapshotted whenever an amount crosses currencies, so historical records
+/// never move when today's rate changes.
+model ExchangeRate {
+  id            String    @id @default(cuid(2))
+  baseCurrency  Currency
+  quoteCurrency Currency
+  /// 1 base = `rate` quote.
+  rate          Decimal   @db.Decimal(18, 6)
+  source        String?
+  effectiveFrom DateTime
+  effectiveTo   DateTime?
+  createdAt     DateTime  @default(now())
+
+  @@unique([baseCurrency, quoteCurrency, effectiveFrom])
+  @@index([baseCurrency, quoteCurrency, effectiveFrom])
+}
+
+// ═══════════════════ PAYMENT ═══════════════════
+
+/// One payment attempt against a delivery. Provider specifics stay in
+/// `providerRef` / `metadata`; the Delivery module never sees ABA fields.
+model Payment {
+  id            String          @id @default(cuid(2))
+  deliveryId    String
+  method        PaymentMethod
+  provider      PaymentProvider
+  status        PaymentStatus   @default(PENDING)
+  amount        Int
+  currency      Currency
+  providerRef   String?
+  /// KHQR payload the app renders; never a secret.
+  qrString      String?
+  deepLink      String?
+  expiresAt     DateTime?
+  paidAt        DateTime?
+  failureReason String?
+  metadata      Json?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  delivery     Delivery             @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+  transactions PaymentTransaction[]
+
+  @@index([deliveryId, status])
+  @@index([status, expiresAt])
+  @@index([providerRef])
+}
+
+/// Append-only log of every provider interaction (charge, poll, webhook,
+/// refund). Never mutated — corrections are new rows.
+model PaymentTransaction {
+  id          String                 @id @default(cuid(2))
+  paymentId   String
+  type        PaymentTransactionType
+  status      PaymentStatus
+  amount      Int
+  currency    Currency
+  providerRef String?
+  message     String?
+  rawPayload  Json?
+  createdAt   DateTime               @default(now())
+
+  payment Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  @@index([paymentId, createdAt])
+}
+
+// ═══════════════════ FINANCE ═══════════════════
+
+/// Balance is a cached projection of the ledger. It only ever changes inside a
+/// transaction that also writes a WalletTransaction.
+model Wallet {
+  id              String   @id @default(cuid(2))
+  userId          String
+  currency        Currency
+  balance         Int      @default(0)
+  /// Funds committed to a pending withdrawal — reserved, not spendable.
+  reservedBalance Int      @default(0)
+  /// Optimistic-lock counter, bumped on every ledger write.
+  version         Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user         User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions WalletTransaction[]
+  withdrawals  Withdrawal[]
+
+  @@unique([userId, currency])
+}
+
+model WalletTransaction {
+  id            String                  @id @default(cuid(2))
+  walletId      String
+  type          WalletTransactionType
+  direction     LedgerDirection
+  status        WalletTransactionStatus @default(COMPLETED)
+  amount        Int
+  currency      Currency
+  balanceBefore Int
+  balanceAfter  Int
+  referenceType String
+  referenceId   String?
+  description   String?
+  metadata      Json?
+  createdAt     DateTime                @default(now())
+
+  wallet Wallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
+
+  /// Idempotency: one ledger entry per (wallet, reference, type).
+  @@unique([walletId, referenceType, referenceId, type])
+  @@index([walletId, createdAt])
+  @@index([referenceType, referenceId])
+}
+
+/// Immutable financial snapshot of one completed delivery for one driver.
+model DriverEarning {
+  id                  String        @id @default(cuid(2))
+  driverId            String
+  deliveryId          String        @unique
+  currency            Currency
+  deliveryAmount      Int
+  commissionPercentBp Int
+  commissionAmount    Int
+  tipAmount           Int           @default(0)
+  bonusAmount         Int           @default(0)
+  netAmount           Int
+  status              EarningStatus @default(PENDING)
+  walletTransactionId String?
+  earnedAt            DateTime      @default(now())
+  createdAt           DateTime      @default(now())
+
+  driver   DriverProfile @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  delivery Delivery      @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+
+  @@index([driverId, earnedAt])
+  @@index([driverId, status])
+}
+
+model Withdrawal {
+  id                   String           @id @default(cuid(2))
+  driverId             String
+  walletId             String
+  method               WithdrawalMethod @default(BANK_TRANSFER)
+  status               WithdrawalStatus @default(PENDING)
+  amount               Int
+  fee                  Int              @default(0)
+  netAmount            Int
+  currency             Currency
+  bankName             String?
+  accountHolderName    String?
+  accountNumberLast4   String?
+  providerRef          String?
+  rejectedReason       String?
+  failureReason        String?
+  /// The DEBIT entry that reserved the funds when the request was made.
+  reserveTransactionId String?
+  requestedAt          DateTime         @default(now())
+  processedAt          DateTime?
+  completedAt          DateTime?
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+
+  driver DriverProfile @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  wallet Wallet        @relation(fields: [walletId], references: [id])
+
+  @@index([driverId, status])
+  @@index([status, requestedAt])
+}
+
+// ═══════════════════ COMMUNICATION ═══════════════════
+
+model Conversation {
+  id            String    @id @default(cuid(2))
+  deliveryId    String    @unique
+  customerId    String
+  driverId      String?
+  lastMessageAt DateTime?
+  closedAt      DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  delivery     Delivery                  @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+  customer     CustomerProfile           @relation(fields: [customerId], references: [id])
+  driver       DriverProfile?            @relation(fields: [driverId], references: [id])
+  messages     Message[]
+  participants ConversationParticipant[]
+
+  @@index([customerId, lastMessageAt])
+  @@index([driverId, lastMessageAt])
+}
+
+model ConversationParticipant {
+  id             String    @id @default(cuid(2))
+  conversationId String
+  userId         String
+  lastReadAt     DateTime?
+  joinedAt       DateTime  @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, userId])
+  @@index([userId])
+}
+
+model Message {
+  id             String      @id @default(cuid(2))
+  conversationId String
+  senderUserId   String
+  type           MessageType @default(TEXT)
+  body           String?
+  fileId         String?
+  latitude       Float?
+  longitude      Float?
+  createdAt      DateTime    @default(now())
+  deletedAt      DateTime?
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender       User         @relation(fields: [senderUserId], references: [id])
+  file         FileAsset?   @relation("MessageAttachment", fields: [fileId], references: [id], onDelete: SetNull)
+
+  @@index([conversationId, createdAt])
+}
+
+/// The in-app record. Push delivery is tracked separately in PushDispatch so a
+/// failed FCM call can never corrupt business state.
+model Notification {
+  id         String           @id @default(cuid(2))
+  userId     String
+  type       NotificationType
+  title      String
+  body       String
+  data       Json?
+  deliveryId String?
+  readAt     DateTime?
+  createdAt  DateTime         @default(now())
+
+  user       User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  delivery   Delivery?      @relation(fields: [deliveryId], references: [id], onDelete: SetNull)
+  dispatches PushDispatch[]
+
+  @@index([userId, createdAt])
+  @@index([userId, readAt])
+}
+
+model PushDispatch {
+  id             String             @id @default(cuid(2))
+  notificationId String
+  pushTokenId    String
+  status         PushDispatchStatus @default(PENDING)
+  provider       PushProvider       @default(FCM)
+  providerRef    String?
+  error          String?
+  attempts       Int                @default(0)
+  sentAt         DateTime?
+  createdAt      DateTime           @default(now())
+
+  notification Notification    @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+  pushToken    DevicePushToken @relation(fields: [pushTokenId], references: [id], onDelete: Cascade)
+
+  @@index([notificationId])
+  @@index([status, createdAt])
+}
+
+// ═══════════════════ FILES ═══════════════════
+
+/// Metadata only. Bytes live in MinIO/S3 — never in Postgres. PRIVATE assets
+/// (national IDs, POD photos) are only ever served through short-lived signed
+/// URLs minted per request.
+model FileAsset {
+  id               String           @id @default(cuid(2))
+  bucket           String
+  objectKey        String           @unique
+  purpose          FilePurpose
+  visibility       FileVisibility   @default(PRIVATE)
+  status           FileUploadStatus @default(UPLOADED)
+  mimeType         String
+  sizeBytes        Int
+  originalFilename String?
+  checksum         String?
+  width            Int?
+  height           Int?
+  uploadedByUserId String?
+  createdAt        DateTime         @default(now())
+  deletedAt        DateTime?
+
+  uploadedBy      User?                  @relation(fields: [uploadedByUserId], references: [id], onDelete: SetNull)
+  customerAvatars CustomerProfile[]      @relation("CustomerAvatar")
+  driverAvatars   DriverProfile[]        @relation("DriverAvatar")
+  vehiclePhotos   DriverVehicle[]        @relation("VehiclePhoto")
+  driverDocuments DriverDocument[]       @relation("DriverDocumentFile")
+  khqrImages      DriverPaymentSetting[] @relation("DriverKhqr")
+  packagePhotos   DeliveryPackage[]      @relation("PackagePhoto")
+  templatePhotos  PackageTemplate[]      @relation("PackageTemplatePhoto")
+  podPhotos       ProofOfDelivery[]      @relation("PodPhoto")
+  podSignatures   ProofOfDelivery[]      @relation("PodSignature")
+  messageFiles    Message[]              @relation("MessageAttachment")
+
+  @@index([uploadedByUserId, createdAt])
+  @@index([purpose])
+}

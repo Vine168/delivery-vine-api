@@ -1,0 +1,57 @@
+# Local development dependencies.
+#
+# PostgreSQL is expected to be running on the host (Homebrew) on 5432 with a
+# `deliver_new` database — that is what prisma/migrations has been applied to.
+# Uncomment the `postgres` service below if you would rather run it in Docker;
+# then point DATABASE_URL at localhost:5433.
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: deliver-redis
+    command: ['redis-server', '--appendonly', 'yes', '--maxmemory-policy', 'noeviction']
+    ports:
+      # 6379 is taken on this machine by another project's Redis.
+      - '6380:6379'
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  minio:
+    image: minio/minio:latest
+    container_name: deliver-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: deliver
+      MINIO_ROOT_PASSWORD: deliver-secret
+    ports:
+      - '9000:9000'
+      - '9001:9001'
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ['CMD', 'mc', 'ready', 'local']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # postgres:
+  #   image: postgres:16-alpine
+  #   container_name: deliver-postgres
+  #   environment:
+  #     POSTGRES_USER: deliver
+  #     POSTGRES_PASSWORD: deliver-secret
+  #     POSTGRES_DB: deliver_new
+  #   ports:
+  #     - '5433:5432'
+  #   volumes:
+  #     - postgres-data:/var/lib/postgresql/data
+
+volumes:
+  redis-data:
+  minio-data:
+  # postgres-data:
