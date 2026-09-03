@@ -250,6 +250,48 @@ export class EnvironmentVariables {
   @IsOptional()
   TRACK_POINT_MIN_INTERVAL_SECONDS = 20;
 
+  // ── Payouts ──
+  @toInt()
+  @IsInt()
+  @IsOptional()
+  WITHDRAWAL_MIN_AMOUNT_KHR = 20_000;
+
+  @toInt()
+  @IsInt()
+  @IsOptional()
+  WITHDRAWAL_MAX_AMOUNT_KHR = 4_000_000;
+
+  @toInt()
+  @IsInt()
+  @IsOptional()
+  WITHDRAWAL_FEE_KHR = 0;
+
+  // ── Payments (ABA PayWay) ──
+  @IsString()
+  @IsOptional()
+  PAYWAY_BASE_URL = 'https://checkout-sandbox.payway.com.kh';
+
+  @IsString()
+  @IsOptional()
+  PAYWAY_MERCHANT_ID?: string;
+
+  @IsString()
+  @IsOptional()
+  PAYWAY_API_KEY?: string;
+
+  @IsString()
+  @IsOptional()
+  PAYWAY_CURRENCIES = 'USD';
+
+  @toInt()
+  @IsInt()
+  @IsOptional()
+  PAYWAY_LIFETIME_MINUTES = 15;
+
+  @IsString()
+  @IsOptional()
+  PAYWAY_RETURN_URL?: string;
+
   // ── Push notifications ──
   @IsString()
   @IsOptional()

@@ -2,17 +2,28 @@ import { registerAs } from '@nestjs/config';
 
 export const paymentConfig = registerAs('payment', () => ({
   /**
-   * Bakong account that receives payments, e.g. `merchant@aclb`.
-   * Without it, KHQR cannot be offered — the API says so rather than
-   * producing a QR code that nobody can pay.
+   * ABA PayWay. KHQR is issued through the merchant's PayWay account rather
+   * than built against Bakong directly, so settlement lands in the merchant's
+   * ABA account and the transaction is verifiable through PayWay.
+   *
+   * Without a merchant id and key the method is not offered at all — the API
+   * says so rather than producing a QR nobody can pay.
    */
-  khqrAccountId: process.env.KHQR_ACCOUNT_ID,
-  khqrMerchantName: process.env.KHQR_MERCHANT_NAME ?? 'Deliver',
-  khqrMerchantCity: process.env.KHQR_MERCHANT_CITY ?? 'Phnom Penh',
-  khqrExpirySeconds: Number(process.env.KHQR_EXPIRY_SECONDS ?? 900),
-  /** Bakong Open API endpoint used to confirm a payment actually arrived. */
-  khqrVerifyUrl: process.env.KHQR_VERIFY_URL,
-  khqrVerifyToken: process.env.KHQR_VERIFY_TOKEN,
+  paywayBaseUrl: (process.env.PAYWAY_BASE_URL ?? 'https://checkout-sandbox.payway.com.kh').replace(/\/+$/, ''),
+  paywayMerchantId: process.env.PAYWAY_MERCHANT_ID,
+  paywayApiKey: process.env.PAYWAY_API_KEY,
+  /**
+   * Currencies the merchant account is enabled for. PayWay rejects anything
+   * else with a gateway error, so the check happens here where the message can
+   * be useful.
+   */
+  paywayCurrencies: (process.env.PAYWAY_CURRENCIES ?? 'USD')
+    .split(',')
+    .map((code) => code.trim().toUpperCase())
+    .filter(Boolean),
+  /** Minutes a QR stays payable. */
+  paywayLifetimeMinutes: Number(process.env.PAYWAY_LIFETIME_MINUTES ?? 15),
+  paywayReturnUrl: process.env.PAYWAY_RETURN_URL ?? '',
 }));
 
 export const payoutConfig = registerAs('payout', () => ({

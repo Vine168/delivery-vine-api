@@ -3,7 +3,7 @@ import { Module } from '@nestjs/common';
 import { PaymentsController } from './payments.controller.js';
 import { PaymentsService } from './payments.service.js';
 import { CashPaymentProvider } from './providers/cash.provider.js';
-import { KhqrPaymentProvider } from './providers/khqr.provider.js';
+import { PayWayPaymentProvider } from './providers/payway.provider.js';
 import { PAYMENT_PROVIDERS } from './providers/payment-provider.interface.js';
 
 /**
@@ -16,11 +16,11 @@ import { PAYMENT_PROVIDERS } from './providers/payment-provider.interface.js';
   providers: [
     PaymentsService,
     CashPaymentProvider,
-    KhqrPaymentProvider,
+    PayWayPaymentProvider,
     {
       provide: PAYMENT_PROVIDERS,
-      inject: [CashPaymentProvider, KhqrPaymentProvider],
-      useFactory: (cash: CashPaymentProvider, khqr: KhqrPaymentProvider) => [cash, khqr],
+      inject: [CashPaymentProvider, PayWayPaymentProvider],
+      useFactory: (cash: CashPaymentProvider, payway: PayWayPaymentProvider) => [cash, payway],
     },
   ],
   exports: [PaymentsService],

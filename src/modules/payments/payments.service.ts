@@ -21,7 +21,7 @@ import type { InitiatePaymentDto, PaymentDto, PaymentMethodDto } from './dto/pay
 
 const METHOD_LABELS: Record<PaymentMethod, string> = {
   [PaymentMethod.CASH_ON_DELIVERY]: 'Cash on delivery',
-  [PaymentMethod.ABA_KHQR]: 'ABA / Bakong KHQR',
+  [PaymentMethod.ABA_KHQR]: 'ABA PayWay (KHQR)',
   [PaymentMethod.WALLET]: 'Wallet',
 };
 

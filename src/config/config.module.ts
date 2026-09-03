@@ -18,7 +18,14 @@ import { storageConfig } from './storage.config.js';
       isGlobal: true,
       cache: true,
       expandVariables: true,
-      envFilePath: ['.env.local', '.env'],
+      /**
+       * The test environment must not fall back to `.env`. A blank value in
+       * `.env.test` does not shadow a real one in `.env` — the key is simply
+       * absent — so development credentials would otherwise be picked up by
+       * the test run, and a test asserting "this integration is unconfigured"
+       * would quietly exercise the live one.
+       */
+      envFilePath: process.env.NODE_ENV === 'test' ? ['.env.test'] : ['.env.local', '.env'],
       validate: validateEnv,
       load: [
         appConfig,
