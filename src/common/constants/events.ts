@@ -29,6 +29,13 @@ export const WsEvent = {
   CLIENT_UNSUBSCRIBE_DELIVERY: 'delivery.unsubscribe',
   CLIENT_DRIVER_LOCATION: 'driver.location.push',
 
+  // Server → client replies to the messages above. Named events rather than
+  // acknowledgements: every socket client library handles events the same way,
+  // and a dropped reply is then visible instead of an ack that never settles.
+  DELIVERY_SUBSCRIBED: 'delivery.subscribed',
+  DELIVERY_UNSUBSCRIBED: 'delivery.unsubscribed',
+  DRIVER_LOCATION_ACCEPTED: 'driver.location.accepted',
+
   // Connection lifecycle
   CONNECTION_READY: 'connection.ready',
   CONNECTION_ERROR: 'connection.error',

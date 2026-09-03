@@ -34,8 +34,10 @@ export class AllExceptionsFilter implements ExceptionFilter {
   private readonly logger = new Logger(AllExceptionsFilter.name);
 
   catch(exception: unknown, host: ArgumentsHost): void {
+    // WebSocket errors are handled by WsExceptionFilter on the gateway, which
+    // runs ahead of Nest's own handler and speaks the same envelope.
     if (host.getType() !== 'http') {
-      this.logger.error(`Non-HTTP exception: ${String(exception)}`);
+      this.logger.error(`Unhandled ${host.getType()} exception: ${String(exception)}`);
       return;
     }
 

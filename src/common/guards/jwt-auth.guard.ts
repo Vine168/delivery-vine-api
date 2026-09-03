@@ -18,6 +18,11 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
   }
 
   canActivate(context: ExecutionContext): boolean | Promise<boolean> | Observable<boolean> {
+    // Sockets authenticate once, at connection time, in RealtimeGateway. This
+    // guard reads an HTTP request and would silently reject every WebSocket
+    // message if it ran there.
+    if (context.getType() !== 'http') return true;
+
     const isPublic = this.reflector.getAllAndOverride<boolean>(METADATA_KEY.IS_PUBLIC, [
       context.getHandler(),
       context.getClass(),

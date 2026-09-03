@@ -162,6 +162,13 @@ export class DriverJobsService {
           data: { status: AssignmentStatus.ACCEPTED, respondedAt: new Date() },
         });
 
+        // Collected before the update: the losing drivers need to be named in
+        // the event so their offer cards can be cleared.
+        const losers = await tx.deliveryAssignment.findMany({
+          where: { deliveryId, status: AssignmentStatus.OFFERED, NOT: { id: assignment.id } },
+          select: { driverId: true },
+        });
+
         await tx.deliveryAssignment.updateMany({
           where: { deliveryId, status: AssignmentStatus.OFFERED, NOT: { id: assignment.id } },
           data: { status: AssignmentStatus.CANCELLED, respondedAt: new Date() },
@@ -172,13 +179,17 @@ export class DriverJobsService {
           data: { acceptedJobs: { increment: 1 } },
         });
 
-        return { ...transition, driverId };
+        return { ...transition, driverId, loserIds: losers.map((row) => row.driverId) };
       });
 
       await this.availability.setBusy(driverId, true);
 
       this.state.publish(result);
-      this.events.emit(WsEvent.DRIVER_REQUEST_CANCELLED, { deliveryId, exceptDriverId: driverId });
+      this.events.emit(WsEvent.DRIVER_REQUEST_CANCELLED, {
+        deliveryId,
+        exceptDriverId: driverId,
+        driverIds: result.loserIds,
+      });
 
       this.logger.log(`${result.bookingCode} accepted by driver ${driverId}`);
 

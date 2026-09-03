@@ -15,6 +15,8 @@ export interface TestHarness {
   prisma: PrismaService;
   redis: RedisService;
   map: FakeMapProvider;
+  /** Where the app is actually listening — socket clients need a real URL. */
+  url: string;
   /** MATCHING_ENABLED is off in tests; specs run rounds themselves. */
   matching: DeliveryMatchingService;
   close: () => Promise<void>;
@@ -46,6 +48,10 @@ export async function createTestHarness(): Promise<TestHarness> {
   // server supertest binds a fresh ephemeral port per call and they reset
   // each other.
   await app.listen(0);
+
+  const address = app.getHttpServer().address();
+  const port = typeof address === 'object' && address !== null ? address.port : 0;
+  const url = `http://127.0.0.1:${port}`;
 
   const prisma = app.get(PrismaService);
   const redis = app.get(RedisService);
@@ -141,6 +147,7 @@ export async function createTestHarness(): Promise<TestHarness> {
     redis,
     map,
     matching,
+    url,
     reset,
     expireOtpCooldowns,
     close: async () => {

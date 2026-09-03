@@ -41,10 +41,17 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
   /**
    * A dedicated connection. Pub/sub and the Socket.IO adapter need their own
    * sockets, and BullMQ requires a connection without a key prefix.
+   *
+   * `managed: false` hands the caller responsibility for closing it. The
+   * Socket.IO adapter needs that: it still talks to Redis while the server
+   * shuts down, and module teardown order does not guarantee this service
+   * outlives the gateway.
    */
-  duplicate(overrides: Partial<RedisOptions> = {}): Redis {
+  duplicate(overrides: Partial<RedisOptions> = {}, options: { managed?: boolean } = {}): Redis {
     const client = this.client.duplicate(overrides);
-    this.extraClients.push(client);
+    if (options.managed !== false) {
+      this.extraClients.push(client);
+    }
     return client;
   }
 

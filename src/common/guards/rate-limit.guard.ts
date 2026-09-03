@@ -24,6 +24,10 @@ export class RateLimitGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
+    // HTTP only. Socket message budgets, if ever needed, belong in the gateway
+    // where the connection — not the request — is the unit being limited.
+    if (context.getType() !== 'http') return true;
+
     const options = this.reflector.getAllAndOverride<RateLimitOptions | undefined>(METADATA_KEY.RATE_LIMIT, [
       context.getHandler(),
       context.getClass(),

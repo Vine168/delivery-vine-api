@@ -217,13 +217,22 @@ export class DeliveryMatchingService {
    * delivery is still looking and another round should be scheduled.
    */
   async expireRound(deliveryId: string, round: number): Promise<boolean> {
+    const affected = await this.prisma.deliveryAssignment.findMany({
+      where: { deliveryId, round, status: AssignmentStatus.OFFERED },
+      select: { driverId: true },
+    });
+
     const expired = await this.prisma.deliveryAssignment.updateMany({
       where: { deliveryId, round, status: AssignmentStatus.OFFERED },
       data: { status: AssignmentStatus.EXPIRED, respondedAt: new Date() },
     });
 
     if (expired.count > 0) {
-      this.events.emit(WsEvent.DRIVER_REQUEST_EXPIRED, { deliveryId, round });
+      this.events.emit(WsEvent.DRIVER_REQUEST_EXPIRED, {
+        deliveryId,
+        round,
+        driverIds: affected.map((row) => row.driverId),
+      });
     }
 
     const delivery = await this.prisma.delivery.findUnique({
@@ -263,17 +272,28 @@ export class DeliveryMatchingService {
 
   /** Called when one driver wins, or the customer cancels: everyone else is told to stop. */
   async cancelOutstandingOffers(deliveryId: string, exceptDriverId?: string): Promise<number> {
+    const where = {
+      deliveryId,
+      status: AssignmentStatus.OFFERED,
+      ...(exceptDriverId ? { NOT: { driverId: exceptDriverId } } : {}),
+    };
+
+    const affected = await this.prisma.deliveryAssignment.findMany({
+      where,
+      select: { driverId: true },
+    });
+
     const { count } = await this.prisma.deliveryAssignment.updateMany({
-      where: {
-        deliveryId,
-        status: AssignmentStatus.OFFERED,
-        ...(exceptDriverId ? { NOT: { driverId: exceptDriverId } } : {}),
-      },
+      where,
       data: { status: AssignmentStatus.CANCELLED, respondedAt: new Date() },
     });
 
     if (count > 0) {
-      this.events.emit(WsEvent.DRIVER_REQUEST_CANCELLED, { deliveryId, exceptDriverId });
+      this.events.emit(WsEvent.DRIVER_REQUEST_CANCELLED, {
+        deliveryId,
+        exceptDriverId,
+        driverIds: affected.map((row) => row.driverId),
+      });
     }
 
     return count;

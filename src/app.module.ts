@@ -12,6 +12,7 @@ import { buildLoggerOptions } from './common/logger/logger.config.js';
 import { RequestContextMiddleware } from './common/middleware/request-context.middleware.js';
 import { AppConfigModule } from './config/config.module.js';
 import { PrismaModule } from './database/prisma.module.js';
+import { RealtimeModule } from './gateway/realtime.module.js';
 import { QueueModule } from './queue/queue.module.js';
 import { RedisModule } from './redis/redis.module.js';
 import { AddressesModule } from './modules/addresses/addresses.module.js';
@@ -58,6 +59,7 @@ import { VehicleTypesModule } from './modules/vehicle-types/vehicle-types.module
     DriverPresenceModule,
     DeliveryMatchingModule,
     DriverJobsModule,
+    RealtimeModule,
     HealthModule,
   ],
   providers: [

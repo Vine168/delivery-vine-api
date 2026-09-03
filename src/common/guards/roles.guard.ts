@@ -15,6 +15,9 @@ export class RolesGuard implements CanActivate {
   constructor(private readonly reflector: Reflector) {}
 
   canActivate(context: ExecutionContext): boolean {
+    // HTTP only: a socket's principal lives on the connection, not on a request.
+    if (context.getType() !== 'http') return true;
+
     const required = this.reflector.getAllAndOverride<UserRole[] | undefined>(METADATA_KEY.ROLES, [
       context.getHandler(),
       context.getClass(),
