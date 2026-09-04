@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { randomUUID } from 'node:crypto';
@@ -10,7 +10,11 @@ import type {
   AccessTokenPayload,
   RefreshTokenPayload,
 } from '../../../common/interfaces/authenticated-user.interface.js';
-import type { UserRole } from '../../../generated/prisma/enums.js';
+import { UserRole } from '../../../generated/prisma/enums.js';
+import {
+  ADMIN_PERMISSIONS_RESOLVER,
+  type AdminPermissionsResolver,
+} from '../../admin/admin-permissions.provider.js';
 import type { AuthTokensDto } from '../dto/auth-response.dto.js';
 import type { DeviceInfoDto } from '../dto/auth-request.dto.js';
 
@@ -53,6 +57,9 @@ export class TokenService {
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
     private readonly prisma: PrismaService,
+    @Optional()
+    @Inject(ADMIN_PERMISSIONS_RESOLVER)
+    private readonly resolvePermissions?: AdminPermissionsResolver,
   ) {}
 
   private get accessTtlSeconds(): number {
@@ -63,9 +70,14 @@ export class TokenService {
     return parseDurationToSeconds(this.config.get<string>('jwt.refreshExpiresIn', '30d'));
   }
 
-  /** Creates a session (and registers the device) then issues the first pair. */
+  /**
+   * Creates a session (and registers the device) then issues the first pair.
+   *
+   * `permissions` is passed in rather than looked up here, so this service
+   * stays ignorant of the back office.
+   */
   async createSession(
-    user: { id: string; role: UserRole },
+    user: { id: string; role: UserRole; permissions?: string[] },
     context: SessionContext = {},
   ): Promise<{ tokens: AuthTokensDto; sessionId: string }> {
     const deviceId = context.device ? await this.upsertDevice(user.id, context.device) : null;
@@ -80,7 +92,12 @@ export class TokenService {
       select: { id: true },
     });
 
-    const tokens = await this.issuePair(user, session.id, randomUUID());
+    const tokens = await this.issuePair(
+      { ...user, permissions: user.permissions ?? (await this.permissionsFor(user.id, user.role)) },
+      session.id,
+      randomUUID(),
+    );
+
     return { tokens, sessionId: session.id };
   }
 
@@ -119,7 +136,13 @@ export class TokenService {
     }
 
     const tokens = await this.issuePair(
-      { id: existing.user.id, role: existing.user.role },
+      {
+        id: existing.user.id,
+        role: existing.user.role,
+        // Re-read on every rotation, so a role change reaches the dashboard
+        // at the next refresh rather than at the next sign-in.
+        permissions: await this.permissionsFor(existing.user.id, existing.user.role),
+      },
       existing.sessionId,
       existing.familyId,
       existing.id,
@@ -178,14 +201,20 @@ export class TokenService {
   }
 
   private async issuePair(
-    user: { id: string; role: UserRole },
+    user: { id: string; role: UserRole; permissions?: string[] },
     sessionId: string,
     familyId: string,
     replacesTokenId?: string,
   ): Promise<AuthTokensDto> {
     const jti = randomUUID();
 
-    const accessPayload: AccessTokenPayload = { sub: user.id, role: user.role, sid: sessionId, typ: 'access' };
+    const accessPayload: AccessTokenPayload = {
+      sub: user.id,
+      role: user.role,
+      sid: sessionId,
+      typ: 'access',
+      ...(user.permissions ? { permissions: user.permissions } : {}),
+    };
     const refreshPayload: RefreshTokenPayload = {
       sub: user.id,
       sid: sessionId,
@@ -233,6 +262,11 @@ export class TokenService {
       tokenType: 'Bearer',
       expiresIn: this.accessTtlSeconds,
     };
+  }
+
+  private async permissionsFor(userId: string, role: UserRole): Promise<string[] | undefined> {
+    if (role !== UserRole.ADMIN || !this.resolvePermissions) return undefined;
+    return this.resolvePermissions(userId);
   }
 
   private async revokeFamily(familyId: string): Promise<void> {

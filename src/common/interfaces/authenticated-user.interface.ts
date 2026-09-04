@@ -18,6 +18,12 @@ export interface AccessTokenPayload {
   role: UserRole;
   sid: string;
   typ: 'access';
+  /**
+   * Present only for back-office accounts. The dashboard reads this to decide
+   * which screens to render; the API never trusts it, and re-resolves the
+   * operator's permissions on every request.
+   */
+  permissions?: string[];
   iat?: number;
   exp?: number;
   iss?: string;

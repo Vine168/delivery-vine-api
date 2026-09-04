@@ -8,8 +8,10 @@
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { PrismaPg } from '@prisma/adapter-pg';
+import { argon2id, hash } from 'argon2';
 import { PrismaClient } from '../generated/prisma/client.js';
-import { Currency, DiscountType } from '../generated/prisma/enums.js';
+import { Currency, DiscountType, UserRole, UserStatus } from '../generated/prisma/enums.js';
+import { PERMISSION_CATALOGUE, SYSTEM_ROLES } from '../modules/admin/permissions.catalogue.js';
 
 const envFile = process.env.NODE_ENV === 'test' ? '.env.test' : '.env';
 const envPath = path.join(process.cwd(), envFile);
@@ -302,11 +304,106 @@ async function seedPromoCodes(): Promise<void> {
   console.log('  promo codes SAVE500, NEW10');
 }
 
+/**
+ * The permission catalogue is the source of truth in code; this reconciles the
+ * database to it. Codes that disappear from the catalogue are left in place
+ * rather than deleted, because a role may still reference them and silently
+ * narrowing an operator's access is worse than a stale row.
+ */
+async function seedPermissions(): Promise<Map<string, string>> {
+  const byCode = new Map<string, string>();
+
+  for (const permission of PERMISSION_CATALOGUE) {
+    const row = await prisma.permission.upsert({
+      where: { code: permission.code },
+      create: { ...permission, isSystem: true },
+      update: { module: permission.module, action: permission.action, description: permission.description },
+      select: { id: true, code: true },
+    });
+
+    byCode.set(row.code, row.id);
+  }
+
+  console.log(`  ${byCode.size} permissions`);
+  return byCode;
+}
+
+async function seedRoles(permissionIds: Map<string, string>): Promise<void> {
+  for (const role of SYSTEM_ROLES) {
+    const row = await prisma.role.upsert({
+      where: { slug: role.slug },
+      create: { name: role.name, slug: role.slug, description: role.description, isSystem: true },
+      update: { name: role.name, description: role.description, isSystem: true },
+      select: { id: true },
+    });
+
+    // Replace the set outright: the catalogue decides what a system role can do.
+    await prisma.rolePermission.deleteMany({ where: { roleId: row.id } });
+    await prisma.rolePermission.createMany({
+      data: role.permissions
+        .map((code) => permissionIds.get(code))
+        .filter((id): id is string => Boolean(id))
+        .map((permissionId) => ({ roleId: row.id, permissionId })),
+      skipDuplicates: true,
+    });
+
+    console.log(`  role ${role.name} (${role.permissions.length} permissions)`);
+  }
+}
+
+/**
+ * A way in on a fresh install.
+ *
+ * Created only when no back-office account exists at all, and only from
+ * explicit environment variables — so a deployed environment without them has
+ * no default credentials to guess.
+ */
+async function seedSuperAdmin(): Promise<void> {
+  const phone = process.env.ADMIN_BOOTSTRAP_PHONE;
+  const password = process.env.ADMIN_BOOTSTRAP_PASSWORD;
+
+  const existing = await prisma.adminProfile.count();
+  if (existing > 0) {
+    console.log(`  ${existing} back-office account(s) already exist; skipping bootstrap`);
+    return;
+  }
+
+  if (!phone || !password) {
+    console.log('  no ADMIN_BOOTSTRAP_PHONE/PASSWORD set; no super admin created');
+    return;
+  }
+
+  const passwordHash = await hash(password, { type: argon2id, memoryCost: 19_456, timeCost: 2, parallelism: 1 });
+
+  const user = await prisma.user.upsert({
+    where: { phone_role: { phone, role: UserRole.ADMIN } },
+    create: {
+      phone,
+      role: UserRole.ADMIN,
+      status: UserStatus.ACTIVE,
+      passwordHash,
+      phoneVerifiedAt: new Date(),
+    },
+    update: { passwordHash, status: UserStatus.ACTIVE },
+    select: { id: true },
+  });
+
+  await prisma.adminProfile.upsert({
+    where: { userId: user.id },
+    create: { userId: user.id, fullName: 'Super Admin', isSuperAdmin: true },
+    update: { isSuperAdmin: true },
+  });
+
+  console.log(`  super admin created for ${phone}`);
+}
+
 async function main(): Promise<void> {
   console.log(`Seeding ${process.env.NODE_ENV ?? 'development'} database…`);
   await seedVehicleTypesAndPricing();
   await seedExchangeRates();
   await seedPromoCodes();
+  await seedRoles(await seedPermissions());
+  await seedSuperAdmin();
   console.log('Done.');
 }
 

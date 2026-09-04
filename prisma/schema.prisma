@@ -314,6 +314,8 @@ model User {
   reviewedDocs    DriverDocument[]          @relation("DocumentReviewer")
   statusChanges   DeliveryStatusHistory[]   @relation("StatusActor")
   idempotencyKeys IdempotencyKey[]
+  adminProfile    AdminProfile?
+  auditLogs       AuditLog[]                @relation("AuditActor")
 
   /// One phone may hold one CUSTOMER account and one DRIVER account.
   @@unique([phone, role])
@@ -550,6 +552,7 @@ model DriverProfile {
   vehicles       DriverVehicle[]
   documents      DriverDocument[]
   onlineSessions DriverOnlineSession[]
+  zones          DriverZone[]
   deliveries     Delivery[]
   assignments    DeliveryAssignment[]
   earnings       DriverEarning[]
@@ -995,17 +998,33 @@ model PricingRule {
 }
 
 model Zone {
-  id        String   @id @default(cuid(2))
-  code      String   @unique
-  name      String
+  id              String           @id @default(cuid(2))
+  code            String           @unique
+  name            String
+  description     String?
+  city            String?
   /// GeoJSON polygon. Point-in-polygon is done in SQL; PostGIS can replace
   /// this later without touching the pricing API.
-  boundary  Json?
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  boundary        Json?
+  /// A zone is either a drawn polygon or a circle around a point.
+  coverageType    ZoneCoverageType @default(POLYGON)
+  centerLatitude  Float?
+  centerLongitude Float?
+  radiusMeters    Int?
+  isActive        Boolean          @default(true)
+  createdAt       DateTime         @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime         @updatedAt @db.Timestamptz(3)
+  deletedAt       DateTime?        @db.Timestamptz(3)
 
   pricingRules PricingRule[]
+  drivers      DriverZone[]
+
+  @@index([isActive, deletedAt])
+}
+
+enum ZoneCoverageType {
+  POLYGON
+  RADIUS
 }
 
 model PromoCode {
@@ -1350,6 +1369,7 @@ model FileAsset {
   deletedAt        DateTime?        @db.Timestamptz(3)
 
   uploadedBy      User?                  @relation(fields: [uploadedByUserId], references: [id], onDelete: SetNull)
+  adminAvatars    AdminProfile[]         @relation("AdminAvatar")
   customerAvatars CustomerProfile[]      @relation("CustomerAvatar")
   driverAvatars   DriverProfile[]        @relation("DriverAvatar")
   vehiclePhotos   DriverVehicle[]        @relation("VehiclePhoto")
@@ -1363,4 +1383,126 @@ model FileAsset {
 
   @@index([uploadedByUserId, createdAt])
   @@index([purpose])
+}
+
+// ═══════════════════ ADMINISTRATION ═══════════════════
+//
+// The back office is permission-driven rather than role-driven: a role is a
+// named bundle of permissions, and every admin endpoint names the permission
+// it requires. Adding a screen means adding a permission, not editing an enum.
+
+model Permission {
+  id          String   @id @default(cuid(2))
+  /// Stable identifier the API and the dashboard both check, e.g. `orders.view`.
+  code        String   @unique
+  module      String
+  action      String
+  description String
+  /// Seeded permissions cannot be deleted; ones an operator adds can.
+  isSystem    Boolean  @default(true)
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @db.Timestamptz(3)
+
+  roles RolePermission[]
+
+  @@index([module])
+}
+
+model Role {
+  id          String    @id @default(cuid(2))
+  name        String    @unique
+  slug        String    @unique
+  description String?
+  /// System roles (Super Admin, Operations…) cannot be deleted or renamed.
+  isSystem    Boolean   @default(false)
+  createdAt   DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime  @updatedAt @db.Timestamptz(3)
+  deletedAt   DateTime? @db.Timestamptz(3)
+
+  permissions RolePermission[]
+  admins      AdminProfile[]
+
+  @@index([deletedAt])
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@index([permissionId])
+}
+
+model AdminProfile {
+  id           String    @id @default(cuid(2))
+  userId       String    @unique
+  fullName     String
+  avatarFileId String?
+  roleId       String?
+  /// Bypasses the permission check entirely. Kept deliberately rare.
+  isSuperAdmin Boolean   @default(false)
+  lastLoginAt  DateTime? @db.Timestamptz(3)
+  createdAt    DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime  @updatedAt @db.Timestamptz(3)
+  deletedAt    DateTime? @db.Timestamptz(3)
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role       Role?      @relation(fields: [roleId], references: [id], onDelete: SetNull)
+  avatarFile FileAsset? @relation("AdminAvatar", fields: [avatarFileId], references: [id], onDelete: SetNull)
+
+  @@index([roleId])
+  @@index([deletedAt])
+}
+
+/// Who changed what, and what it looked like before. Written for every
+/// state-changing admin action so an operator decision can be explained later.
+model AuditLog {
+  id          String   @id @default(cuid(2))
+  actorUserId String?
+  action      String
+  entityType  String
+  entityId    String?
+  summary     String?
+  before      Json?
+  after       Json?
+  ipAddress   String?
+  userAgent   String?
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+
+  actor User? @relation("AuditActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([entityType, entityId, createdAt])
+  @@index([actorUserId, createdAt])
+  @@index([createdAt])
+}
+
+/// Operator-editable configuration. Secrets stay in the environment; this is
+/// for things the business changes without a deploy.
+model SystemSetting {
+  id              String   @id @default(cuid(2))
+  key             String   @unique
+  category        String
+  value           Json
+  description     String?
+  updatedByUserId String?
+  createdAt       DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime @updatedAt @db.Timestamptz(3)
+
+  @@index([category])
+}
+
+/// Which drivers an operator has assigned to a zone.
+model DriverZone {
+  driverId   String
+  zoneId     String
+  assignedAt DateTime @default(now()) @db.Timestamptz(3)
+
+  driver DriverProfile @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  zone   Zone          @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+
+  @@id([driverId, zoneId])
+  @@index([zoneId])
 }
