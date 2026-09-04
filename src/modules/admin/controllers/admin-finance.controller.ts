@@ -1,5 +1,6 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Query } from '@nestjs/common';
-import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Query, Res } from '@nestjs/common';
+import type { Response } from 'express';
+import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   ApiErrorResponses,
   ApiPaginatedResponse,
@@ -28,12 +29,16 @@ import {
   AdminWithdrawalRowDto,
 } from '../dto/admin-finance.dto.js';
 import { RequirePermissions } from '../require-permissions.decorator.js';
+import { AdminExportService } from '../services/admin-export.service.js';
 import { AdminFinanceService } from '../services/admin-finance.service.js';
 
 @ApiTags('Admin — Finance')
 @Controller({ path: 'admin/finance', version: '1' })
 export class AdminFinanceController {
-  constructor(private readonly finance: AdminFinanceService) {}
+  constructor(
+    private readonly finance: AdminFinanceService,
+    private readonly exports: AdminExportService,
+  ) {}
 
   @Get('overview')
   @RequirePermissions('finance.view')
@@ -63,6 +68,23 @@ export class AdminFinanceController {
     @Query() query: AdminWithdrawalQueryDto,
   ): Promise<PaginatedResult<AdminWithdrawalRowDto>> {
     return this.finance.findWithdrawals(query);
+  }
+
+  @Get('withdrawals/export')
+  @RequirePermissions('finance.export')
+  @ApiOperation({
+    summary: 'Download payout requests as a spreadsheet',
+    description:
+      'Takes the same filters as the list, for reconciling against a bank statement. Returns a CSV file rather than the response envelope, and shows only the last four digits of an account number — the file leaves the building, and the one endpoint that reveals the full number is separately permissioned and audited. Amounts appear twice, as an exact decimal and as the minor-unit integer, with the currency in its own column. Capped at 50,000 rows, and refused rather than truncated past that. Every export is recorded in the audit log.',
+  })
+  @ApiOkResponse({ description: 'A CSV file.', content: { 'text/csv': {} } })
+  @ApiErrorResponses({ status: 422, code: ResponseCode.EXPORT_TOO_LARGE })
+  async exportWithdrawals(
+    @CurrentUser('userId') userId: string,
+    @Query() query: AdminWithdrawalQueryDto,
+    @Res() response: Response,
+  ): Promise<void> {
+    await this.exports.withdrawals(userId, this.finance.withdrawalWhere(query), response);
   }
 
   @Get('withdrawals/:id')

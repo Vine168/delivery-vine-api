@@ -1,5 +1,6 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Query } from '@nestjs/common';
-import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Query, Res } from '@nestjs/common';
+import type { Response } from 'express';
+import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   ApiErrorResponses,
   ApiPaginatedResponse,
@@ -19,13 +20,17 @@ import {
   AdminLiveDeliveryDto,
   AdminReassignDeliveryDto,
 } from '../dto/admin-delivery.dto.js';
+import { AdminExportService } from '../services/admin-export.service.js';
 import { RequirePermissions } from '../require-permissions.decorator.js';
 import { AdminDeliveriesService } from '../services/admin-deliveries.service.js';
 
 @ApiTags('Admin — Deliveries')
 @Controller({ path: 'admin/deliveries', version: '1' })
 export class AdminDeliveriesController {
-  constructor(private readonly deliveries: AdminDeliveriesService) {}
+  constructor(
+    private readonly deliveries: AdminDeliveriesService,
+    private readonly exports: AdminExportService,
+  ) {}
 
   @Get()
   @RequirePermissions('deliveries.view')
@@ -55,6 +60,23 @@ export class AdminDeliveriesController {
   })
   live(): Promise<AdminLiveDeliveryDto[]> {
     return this.deliveries.live();
+  }
+
+  @Get('export')
+  @RequirePermissions('deliveries.export')
+  @ApiOperation({
+    summary: 'Download deliveries as a spreadsheet',
+    description:
+      'Takes the same filters as the list, so an export is exactly what the screen is showing. Returns a CSV file rather than the response envelope. Money is written twice — an exact decimal for reading and the minor-unit integer the platform stores — with the currency in its own column. Exports are capped at 50,000 rows: past that the request is refused rather than silently truncated, because a file that stops halfway and looks complete is how figures quietly go missing. Every export is recorded in the audit log.',
+  })
+  @ApiOkResponse({ description: 'A CSV file.', content: { 'text/csv': {} } })
+  @ApiErrorResponses({ status: 422, code: ResponseCode.EXPORT_TOO_LARGE })
+  async export(
+    @CurrentUser('userId') userId: string,
+    @Query() query: AdminDeliveryQueryDto,
+    @Res() response: Response,
+  ): Promise<void> {
+    await this.exports.deliveries(userId, this.deliveries.buildWhere(query), response);
   }
 
   @Get(':id')

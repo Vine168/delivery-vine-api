@@ -109,6 +109,24 @@ export const MoneyUtil = {
   },
 
   /**
+   * The amount as an exact decimal string — `15800` KHR becomes `15800`,
+   * `1580` USD becomes `15.80`.
+   *
+   * Built by moving the decimal point through the digits rather than dividing,
+   * so no float ever touches the value. For files a person opens in a
+   * spreadsheet, where a symbol and thousands separators would get in the way.
+   */
+  toDecimalString(money: Money): string {
+    const scale = CURRENCY_SCALE[money.currency];
+    const sign = money.amount < 0 ? '-' : '';
+    const digits = Math.abs(money.amount).toString().padStart(scale + 1, '0');
+
+    if (scale === 0) return `${sign}${digits}`;
+
+    return `${sign}${digits.slice(0, -scale)}.${digits.slice(-scale)}`;
+  },
+
+  /**
    * Converts between currencies with an explicit rate, returning the rate used
    * so it can be snapshotted alongside the converted amount.
    */

@@ -1,5 +1,18 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Param, Patch, Post, Put, Query } from '@nestjs/common';
-import { ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  Patch,
+  Post,
+  Put,
+  Query,
+  Res,
+} from '@nestjs/common';
+import type { Response } from 'express';
+import { ApiOkResponse, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
 import {
   ApiErrorResponses,
   ApiPaginatedResponse,
@@ -21,13 +34,17 @@ import {
   AdminUpdateDriverDto,
   AdminZoneSummaryDto,
 } from '../dto/admin-driver.dto.js';
+import { AdminExportService } from '../services/admin-export.service.js';
 import { RequirePermissions } from '../require-permissions.decorator.js';
 import { AdminDriversService } from '../services/admin-drivers.service.js';
 
 @ApiTags('Admin — Drivers')
 @Controller({ path: 'admin/drivers', version: '1' })
 export class AdminDriversController {
-  constructor(private readonly drivers: AdminDriversService) {}
+  constructor(
+    private readonly drivers: AdminDriversService,
+    private readonly exports: AdminExportService,
+  ) {}
 
   @Get()
   @RequirePermissions('drivers.view')
@@ -40,6 +57,23 @@ export class AdminDriversController {
   @ApiPaginatedResponse({ code: ResponseCode.ADMIN_DRIVERS_FETCHED, type: AdminDriverRowDto })
   findAll(@Query() query: AdminDriverQueryDto): Promise<PaginatedResult<AdminDriverRowDto>> {
     return this.drivers.findAll(query);
+  }
+
+  @Get('export')
+  @RequirePermissions('drivers.export')
+  @ApiOperation({
+    summary: 'Download the fleet as a spreadsheet',
+    description:
+      'Takes the same filters as the list, and includes each driver’s zones, rating and acceptance rate. Returns a CSV file rather than the response envelope. Money is written twice — an exact decimal for reading and the minor-unit integer the platform stores — with the currency in its own column. Exports are capped at 50,000 rows: past that the request is refused rather than silently truncated, because a file that stops halfway and looks complete is how figures quietly go missing. Every export is recorded in the audit log.',
+  })
+  @ApiOkResponse({ description: 'A CSV file.', content: { 'text/csv': {} } })
+  @ApiErrorResponses({ status: 422, code: ResponseCode.EXPORT_TOO_LARGE })
+  async export(
+    @CurrentUser('userId') userId: string,
+    @Query() query: AdminDriverQueryDto,
+    @Res() response: Response,
+  ): Promise<void> {
+    await this.exports.drivers(userId, this.drivers.buildWhere(query), response);
   }
 
   @Get(':id')

@@ -90,3 +90,29 @@ describe('MoneyUtil', () => {
     });
   });
 });
+
+describe('MoneyUtil.toDecimalString', () => {
+  it('writes riel without a fractional part', () => {
+    expect(MoneyUtil.toDecimalString({ amount: 15_800, currency: Currency.KHR })).toBe('15800');
+    expect(MoneyUtil.toDecimalString({ amount: 0, currency: Currency.KHR })).toBe('0');
+  });
+
+  it('writes dollars with exactly two decimal places', () => {
+    expect(MoneyUtil.toDecimalString({ amount: 1_580, currency: Currency.USD })).toBe('15.80');
+    expect(MoneyUtil.toDecimalString({ amount: 5, currency: Currency.USD })).toBe('0.05');
+    expect(MoneyUtil.toDecimalString({ amount: 0, currency: Currency.USD })).toBe('0.00');
+  });
+
+  it('keeps the sign in front of a negative amount', () => {
+    expect(MoneyUtil.toDecimalString({ amount: -1_234, currency: Currency.USD })).toBe('-12.34');
+    expect(MoneyUtil.toDecimalString({ amount: -500, currency: Currency.KHR })).toBe('-500');
+  });
+
+  it('is exact where dividing by a power of ten would not be', () => {
+    // 8.07 and 0.29 are both unrepresentable as binary floats; string
+    // arithmetic gives the right answer where `amount / 100` does not.
+    expect(MoneyUtil.toDecimalString({ amount: 807, currency: Currency.USD })).toBe('8.07');
+    expect(MoneyUtil.toDecimalString({ amount: 29, currency: Currency.USD })).toBe('0.29');
+    expect(MoneyUtil.toDecimalString({ amount: 100_000_001, currency: Currency.USD })).toBe('1000000.01');
+  });
+});

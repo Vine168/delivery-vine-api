@@ -456,7 +456,8 @@ export class AdminDeliveriesService {
 
   // ── Internals ──────────────────────────────────────────────────────────
 
-  private buildWhere(query: AdminDeliveryQueryDto): Prisma.DeliveryWhereInput {
+  /** Exposed so an export covers exactly the rows the screen is showing. */
+  buildWhere(query: AdminDeliveryQueryDto): Prisma.DeliveryWhereInput {
     const stalledSince =
       query.stalledForMinutes !== undefined
         ? new Date(Date.now() - query.stalledForMinutes * 60_000)

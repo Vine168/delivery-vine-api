@@ -235,7 +235,27 @@ export class AdminFinanceService {
   // ── Withdrawals ────────────────────────────────────────────────────────
 
   async findWithdrawals(query: AdminWithdrawalQueryDto): Promise<PaginatedResult<AdminWithdrawalRowDto>> {
-    const where: Prisma.WithdrawalWhereInput = {
+    const where = this.withdrawalWhere(query);
+
+    const [rows, total] = await Promise.all([
+      this.prisma.withdrawal.findMany({
+        where,
+        // Oldest first: this is a work queue, and the person who has waited
+        // longest should be paid first.
+        orderBy: { requestedAt: 'asc' },
+        skip: query.skip,
+        take: query.limit,
+        select: withdrawalSelect,
+      }),
+      this.prisma.withdrawal.count({ where }),
+    ]);
+
+    return PaginationUtil.paginate(rows.map((row) => this.toWithdrawal(row)), query.page, query.limit, total);
+  }
+
+  /** Exposed so an export covers exactly the rows the screen is showing. */
+  withdrawalWhere(query: AdminWithdrawalQueryDto): Prisma.WithdrawalWhereInput {
+    return {
       ...(query.status?.length ? { status: { in: query.status } } : {}),
       ...(query.method ? { method: query.method } : {}),
       ...(query.currency ? { currency: query.currency } : {}),
@@ -258,21 +278,6 @@ export class AdminFinanceService {
           }
         : {}),
     };
-
-    const [rows, total] = await Promise.all([
-      this.prisma.withdrawal.findMany({
-        where,
-        // Oldest first: this is a work queue, and the person who has waited
-        // longest should be paid first.
-        orderBy: { requestedAt: 'asc' },
-        skip: query.skip,
-        take: query.limit,
-        select: withdrawalSelect,
-      }),
-      this.prisma.withdrawal.count({ where }),
-    ]);
-
-    return PaginationUtil.paginate(rows.map((row) => this.toWithdrawal(row)), query.page, query.limit, total);
   }
 
   async findWithdrawal(id: string): Promise<AdminWithdrawalDetailDto> {

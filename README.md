@@ -91,7 +91,7 @@ dispute.
 ## Layout
 
 ```
-prisma/schema.prisma      46 tables; migrations include raw-SQL constraints
+prisma/schema.prisma      53 tables; migrations include raw-SQL constraints
 src/common/               envelope, filters, guards, decorators, utils
 src/config/               one namespace per concern + env validation
 src/database/             Prisma service and error translation
@@ -99,11 +99,13 @@ src/redis/                connections, locks, counters
 src/modules/              business domains (auth, deliveries, wallets, …)
 src/gateway/              Socket.IO gateways
 src/jobs/                 BullMQ processors
+docs/back-office.md       how the admin API is meant to be used
 ```
 
 ## What is built
 
-Nine phases, all shipped. 95 endpoints, 3 socket messages, 305 tests.
+Nine phases for the mobile apps, then eight for the back office. 174
+endpoints (79 of them back office), 3 socket messages, 481 tests.
 
 | Area | Highlights |
 | --- | --- |
@@ -115,6 +117,9 @@ Nine phases, all shipped. 95 endpoints, 3 socket messages, 305 tests.
 | Realtime | One authenticated socket per app, server-verified rooms, live position and status |
 | Money | Integer minor units, wallet ledger with before/after balances, reservations, ABA PayWay KHQR |
 | Engagement | Ratings, favourite drivers, package templates, chat, notifications |
+| Back office | Permissions and roles, dashboard, delivery support, driver approval, payout settlement, pricing, notifications, audit log, CSV exports |
+
+The back office is documented separately in [docs/back-office.md](docs/back-office.md).
 
 ### Known gaps
 

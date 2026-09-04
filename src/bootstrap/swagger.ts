@@ -21,6 +21,22 @@ export const SWAGGER_TAGS = [
   ['Notifications', 'In-app notifications and push device registration.'],
   ['Uploads', 'File upload and signed download URLs.'],
   ['Health', 'Liveness and readiness probes.'],
+
+  // ── Back office ──
+  ['Admin', 'The signed-in operator and the permission catalogue.'],
+  ['Admin — Dashboard', 'The operations overview: volumes, revenue, fleet and queues.'],
+  ['Admin — Deliveries', 'Every delivery, the live map, and support actions on them.'],
+  ['Admin — Drivers', 'Approval, documents, suspension and zone assignment.'],
+  ['Admin — Customers', 'Customer accounts and suspension.'],
+  ['Admin — Finance', 'Revenue, payouts, earnings, payments and wallet adjustments.'],
+  ['Admin — Pricing', 'Vehicle types and pricing rules.'],
+  ['Admin — Zones', 'Service zones.'],
+  ['Admin — Promo codes', 'Discount campaigns.'],
+  ['Admin — Notifications', 'Broadcasts, audiences and what was sent.'],
+  ['Admin — Roles', 'Permission bundles.'],
+  ['Admin — Administrators', 'Back-office accounts.'],
+  ['Admin — Settings', 'Runtime settings an operator may change.'],
+  ['Admin — Audit log', 'What operators have done.'],
 ] as const;
 
 export function setupSwagger(app: INestApplication, apiPrefix: string): void {
@@ -28,7 +44,7 @@ export function setupSwagger(app: INestApplication, apiPrefix: string): void {
     .setTitle('Deliver API')
     .setDescription(
       [
-        'REST API for the Deliver platform — customer app, driver app and (later) the admin dashboard.',
+        'REST API for the Deliver platform — customer app, driver app and back office.',
         '',
         '### Response envelope',
         'Every response uses the same shape:',
@@ -43,7 +59,16 @@ export function setupSwagger(app: INestApplication, apiPrefix: string): void {
         '`{ "amount": 45000, "currency": "KHR" }` is 45,000 riel. The server is the only authority on price.',
         '',
         '### Authentication',
-        'Bearer access tokens (15 min) with single-use refresh tokens (30 days).',
+        'Bearer access tokens (15 min) with single-use refresh tokens (30 days). One phone number may hold a',
+        'customer account, a driver account and a back-office account independently, so `POST /auth/login`',
+        'takes the role being signed in as.',
+        '',
+        '### Back office',
+        'Endpoints under `/admin` additionally require a permission, which the operator holds through their',
+        'role. `GET /admin/me` returns the permissions the signed-in operator holds, so the dashboard can',
+        'decide what to render; the server re-checks them from the database on every request and never trusts',
+        'the copy in the token. A refusal names what was missing — "You do not have permission to cancel',
+        'deliveries." — rather than a bare 403.',
       ].join('\n'),
     )
     .setVersion('1.0')

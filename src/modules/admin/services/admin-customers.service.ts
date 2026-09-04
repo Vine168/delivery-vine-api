@@ -260,7 +260,8 @@ export class AdminCustomersService {
     return customer;
   }
 
-  private buildWhere(query: AdminCustomerQueryDto): Prisma.CustomerProfileWhereInput {
+  /** Exposed so an export covers exactly the rows the screen is showing. */
+  buildWhere(query: AdminCustomerQueryDto): Prisma.CustomerProfileWhereInput {
     return {
       user: {
         deletedAt: null,

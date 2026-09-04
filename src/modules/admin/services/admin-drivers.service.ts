@@ -623,7 +623,8 @@ export class AdminDriversService {
     });
   }
 
-  private buildWhere(query: AdminDriverQueryDto): Prisma.DriverProfileWhereInput {
+  /** Exposed so an export covers exactly the rows the screen is showing. */
+  buildWhere(query: AdminDriverQueryDto): Prisma.DriverProfileWhereInput {
     return {
       deletedAt: null,
       ...(query.approvalStatus?.length ? { approvalStatus: { in: query.approvalStatus } } : {}),

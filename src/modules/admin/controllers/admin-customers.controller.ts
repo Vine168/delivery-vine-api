@@ -1,5 +1,6 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Query } from '@nestjs/common';
-import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Query, Res } from '@nestjs/common';
+import type { Response } from 'express';
+import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   ApiErrorResponses,
   ApiPaginatedResponse,
@@ -16,13 +17,17 @@ import {
   AdminCustomerRowDto,
 } from '../dto/admin-customer.dto.js';
 import { AdminReasonDto } from '../dto/admin-driver.dto.js';
+import { AdminExportService } from '../services/admin-export.service.js';
 import { RequirePermissions } from '../require-permissions.decorator.js';
 import { AdminCustomersService } from '../services/admin-customers.service.js';
 
 @ApiTags('Admin — Customers')
 @Controller({ path: 'admin/customers', version: '1' })
 export class AdminCustomersController {
-  constructor(private readonly customers: AdminCustomersService) {}
+  constructor(
+    private readonly customers: AdminCustomersService,
+    private readonly exports: AdminExportService,
+  ) {}
 
   @Get()
   @RequirePermissions('customers.view')
@@ -34,6 +39,23 @@ export class AdminCustomersController {
   @ApiPaginatedResponse({ code: ResponseCode.ADMIN_CUSTOMERS_FETCHED, type: AdminCustomerRowDto })
   findAll(@Query() query: AdminCustomerQueryDto): Promise<PaginatedResult<AdminCustomerRowDto>> {
     return this.customers.findAll(query);
+  }
+
+  @Get('export')
+  @RequirePermissions('customers.export')
+  @ApiOperation({
+    summary: 'Download customers as a spreadsheet',
+    description:
+      'Takes the same filters as the list. Returns a CSV file rather than the response envelope. Money is written twice — an exact decimal for reading and the minor-unit integer the platform stores — with the currency in its own column. Exports are capped at 50,000 rows: past that the request is refused rather than silently truncated, because a file that stops halfway and looks complete is how figures quietly go missing. Every export is recorded in the audit log.',
+  })
+  @ApiOkResponse({ description: 'A CSV file.', content: { 'text/csv': {} } })
+  @ApiErrorResponses({ status: 422, code: ResponseCode.EXPORT_TOO_LARGE })
+  async export(
+    @CurrentUser('userId') userId: string,
+    @Query() query: AdminCustomerQueryDto,
+    @Res() response: Response,
+  ): Promise<void> {
+    await this.exports.customers(userId, this.customers.buildWhere(query), response);
   }
 
   @Get(':id')
