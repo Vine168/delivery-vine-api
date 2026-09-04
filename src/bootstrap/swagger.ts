@@ -1,5 +1,5 @@
 import type { INestApplication } from '@nestjs/common';
-import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { DocumentBuilder, SwaggerModule, type OpenAPIObject } from '@nestjs/swagger';
 import { ApiErrorDto, ApiSuccessDto, CursorMetaDto, PageMetaDto } from '../common/dto/api-response.dto.js';
 
 export const SWAGGER_TAGS = [
@@ -61,6 +61,8 @@ export function setupSwagger(app: INestApplication, apiPrefix: string): void {
     extraModels: [ApiSuccessDto, ApiErrorDto, PageMetaDto, CursorMetaDto],
   });
 
+  addUniversalResponses(document);
+
   SwaggerModule.setup(`${apiPrefix}/docs`, app, document, {
     jsonDocumentUrl: `${apiPrefix}/docs/json`,
     swaggerOptions: {
@@ -70,4 +72,54 @@ export function setupSwagger(app: INestApplication, apiPrefix: string): void {
       docExpansion: 'none',
     },
   });
+}
+
+/** The error envelope, referenced rather than repeated on every operation. */
+function errorResponse(code: string, message: string) {
+  return {
+    description: message,
+    content: {
+      'application/json': {
+        schema: {
+          properties: {
+            success: { type: 'boolean', example: false },
+            code: { type: 'string', example: code },
+            message: { type: 'string', example: message },
+            errors: { type: 'array', nullable: true, items: { type: 'object' }, example: null },
+          },
+        },
+      },
+    },
+  };
+}
+
+/**
+ * Adds the failures every authenticated endpoint shares.
+ *
+ * Documenting 401 and 403 on each handler individually would be noise that
+ * drifts; adding them once here means an endpoint cannot be added without them
+ * appearing, and a reader can trust that an operation listing only its own
+ * errors still returns the standard ones.
+ */
+function addUniversalResponses(document: OpenAPIObject): void {
+  type Operation = { security?: unknown[]; responses?: Record<string, unknown> };
+
+  for (const operations of Object.values(document.paths)) {
+    for (const operation of Object.values(operations) as Operation[]) {
+      if (typeof operation !== 'object' || operation === null) continue;
+      // Public endpoints (auth, health) declare no security requirement.
+      if (!operation.security?.length) continue;
+
+      operation.responses ??= {};
+      operation.responses['401'] ??= errorResponse('UNAUTHORIZED', 'Authentication is required.');
+      operation.responses['403'] ??= errorResponse(
+        'ROLE_NOT_ALLOWED',
+        'Your account type cannot access this resource.',
+      );
+      operation.responses['500'] ??= errorResponse(
+        'INTERNAL_ERROR',
+        'An unexpected error occurred. Please try again.',
+      );
+    }
+  }
 }

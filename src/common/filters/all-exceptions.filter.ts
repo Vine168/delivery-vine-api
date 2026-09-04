@@ -115,12 +115,65 @@ export class AllExceptionsFilter implements ExceptionFilter {
       return this.fromHttpException(exception);
     }
 
+    const bodyParserError = this.fromBodyParser(exception);
+    if (bodyParserError) return bodyParserError;
+
     return {
       status: HttpStatus.INTERNAL_SERVER_ERROR,
       code: ResponseCode.INTERNAL_ERROR,
       message: messageForCode(ResponseCode.INTERNAL_ERROR),
       errors: null,
     };
+  }
+
+  /**
+   * body-parser rejects an oversized or malformed payload with a plain Error
+   * carrying a status, not an HttpException — so without this a client sending
+   * 2 MB of JSON got a 500 and no idea what they did wrong.
+   */
+  private fromBodyParser(exception: unknown): {
+    status: number;
+    code: string;
+    message: string;
+    errors: FieldError[] | null;
+  } | null {
+    if (typeof exception !== 'object' || exception === null) return null;
+
+    const candidate = exception as { type?: string; status?: number; statusCode?: number };
+    const status = candidate.status ?? candidate.statusCode;
+
+    if (typeof status !== 'number' || status < 400 || status >= 500) return null;
+
+    switch (candidate.type) {
+      case 'entity.too.large':
+        return {
+          status: HttpStatus.PAYLOAD_TOO_LARGE,
+          code: ResponseCode.PAYLOAD_TOO_LARGE,
+          message: 'The request body is too large.',
+          errors: null,
+        };
+      case 'entity.parse.failed':
+        return {
+          status: HttpStatus.BAD_REQUEST,
+          code: ResponseCode.VALIDATION_ERROR,
+          message: 'The request body is not valid JSON.',
+          errors: null,
+        };
+      case 'encoding.unsupported':
+        return {
+          status: HttpStatus.UNSUPPORTED_MEDIA_TYPE,
+          code: ResponseCode.UNSUPPORTED_MEDIA_TYPE,
+          message: 'That content encoding is not supported.',
+          errors: null,
+        };
+      default:
+        return {
+          status,
+          code: this.codeForStatus(status),
+          message: 'The request could not be read.',
+          errors: null,
+        };
+    }
   }
 
   private fromHttpException(exception: HttpException): {
@@ -136,6 +189,20 @@ export class AllExceptionsFilter implements ExceptionFilter {
     if (typeof response === 'object' && response !== null) {
       const maybeMessage = (response as { message?: unknown }).message;
       if (typeof maybeMessage === 'string') message = maybeMessage;
+    }
+
+    // Nest wraps a JSON syntax error before this filter sees it, and the
+    // parser's message quotes the offending payload — and its own internals —
+    // back at the caller. V8 phrases these several ways, so match the subject
+    // rather than the wording. Real validation failures never reach here: they
+    // arrive as AppException with a field list.
+    if (status === HttpStatus.BAD_REQUEST && /JSON/i.test(message)) {
+      return {
+        status,
+        code: ResponseCode.VALIDATION_ERROR,
+        message: 'The request body is not valid JSON.',
+        errors: null,
+      };
     }
 
     return {

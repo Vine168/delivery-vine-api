@@ -101,6 +101,38 @@ src/gateway/              Socket.IO gateways
 src/jobs/                 BullMQ processors
 ```
 
+## What is built
+
+Nine phases, all shipped. 95 endpoints, 3 socket messages, 305 tests.
+
+| Area | Highlights |
+| --- | --- |
+| Auth | Registration → OTP → password, single-use refresh tokens with family revocation, Argon2id |
+| Profiles | Customer and driver profiles, addresses, vehicles, documents, MinIO storage with signed URLs |
+| Delivery | Quote and booking on one pricing path, a state machine with per-actor rules, full audit trail |
+| Matching | Redis GEO presence, widening rounds, one `/matrix` call per round, atomic accept |
+| Execution | Arrive, collect, deliver, proof of delivery, completion; IN_TRANSIT set by the location stream |
+| Realtime | One authenticated socket per app, server-verified rooms, live position and status |
+| Money | Integer minor units, wallet ledger with before/after balances, reservations, ABA PayWay KHQR |
+| Engagement | Ratings, favourite drivers, package templates, chat, notifications |
+
+### Known gaps
+
+Two integrations are wired but not connected, both waiting on credentials
+rather than code:
+
+- **SMS** — OTP codes are written to the log. Swap the `OTP_SENDER` provider in
+  `auth.module.ts`.
+- **Push** — notifications are stored and pushed over the socket, but FCM is not
+  called. Swap the `PUSH_SENDER` provider in `notifications.module.ts`.
+
+Neither pretends to succeed: the OTP response says where the code went, and a
+push attempt is recorded as `SKIPPED` rather than `SENT`.
+
+**ABA PayWay** is live against sandbox. The supplied merchant account is
+sandbox-only and enabled for USD, so a KHR delivery is refused with an
+actionable message. Production needs different credentials in `PAYWAY_*`.
+
 ## Architecture
 
 The data model, endpoint contracts, delivery state machine, matching pipeline,
