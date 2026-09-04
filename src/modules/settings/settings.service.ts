@@ -91,6 +91,10 @@ export class SettingsService {
   }
 
   async findOne(key: string): Promise<SettingView> {
+    // Through the catalogue, so an unrecognised key is refused with the same
+    // message wherever it is asked for.
+    this.definitionFor(key);
+
     const setting = (await this.findAll()).find((entry) => entry.key === key);
     if (!setting) throw AppException.notFound(ResponseCode.SETTING_NOT_FOUND);
     return setting;

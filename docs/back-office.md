@@ -126,9 +126,12 @@ and after, the operator who acted and the address it came from. Written by the
 platform; not editable from the API.
 
 **Exports** — CSV, streamed by cursor so memory stays bounded, taking the same
-filters as the screen they come from. Money appears twice, as an exact decimal
+filters as the screen they come from (pagination does not apply; an export
+covers the whole filtered set). Money appears twice, as an exact decimal
 and as the minor-unit integer, with the currency in its own column. Fields that
-a spreadsheet would evaluate as a formula are neutralised. Capped at 50,000
+a spreadsheet would evaluate as a formula are prefixed with an apostrophe, which
+is why phone numbers read as `'+855…` in the file — that is the mitigation
+working, not a bug. Capped at 50,000
 rows: past that the request is refused rather than silently truncated, because a
 file that stops halfway and looks complete is how figures quietly go missing.
 Every export is audited.

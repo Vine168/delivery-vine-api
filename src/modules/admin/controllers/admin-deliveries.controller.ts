@@ -67,7 +67,7 @@ export class AdminDeliveriesController {
   @ApiOperation({
     summary: 'Download deliveries as a spreadsheet',
     description:
-      'Takes the same filters as the list, so an export is exactly what the screen is showing. Returns a CSV file rather than the response envelope. Money is written twice — an exact decimal for reading and the minor-unit integer the platform stores — with the currency in its own column. Exports are capped at 50,000 rows: past that the request is refused rather than silently truncated, because a file that stops halfway and looks complete is how figures quietly go missing. Every export is recorded in the audit log.',
+      'Takes the same filters as the list, so an export is exactly what the screen is showing. Returns a CSV file rather than the response envelope. Money is written twice — an exact decimal for reading and the minor-unit integer the platform stores — with the currency in its own column. Exports are capped at 50,000 rows: past that the request is refused rather than silently truncated, because a file that stops halfway and looks complete is how figures quietly go missing. Every export is recorded in the audit log. Pagination does not apply — an export covers the whole filtered set. A value a spreadsheet would treat as a formula is prefixed with an apostrophe, which is why phone numbers in the file begin with one.',
   })
   @ApiOkResponse({ description: 'A CSV file.', content: { 'text/csv': {} } })
   @ApiErrorResponses({ status: 422, code: ResponseCode.EXPORT_TOO_LARGE })
