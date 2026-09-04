@@ -150,3 +150,8 @@ export const SYSTEM_ROLES: { name: string; slug: string; description: string; pe
     ],
   },
 ];
+
+/** Lookup by code, for validating what a role is asked to grant. */
+export const PERMISSIONS_BY_CODE = new Map(
+  PERMISSION_CATALOGUE.map((permission) => [permission.code, permission]),
+);
