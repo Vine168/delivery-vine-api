@@ -39,33 +39,33 @@ export class MatchingProcessor extends WorkerHost {
     }
   }
 
-  private async dispatchRound({ deliveryId, round }: DispatchRoundJob): Promise<void> {
+  private async dispatchRound({ deliveryId, round, search }: DispatchRoundJob): Promise<void> {
     const result = await this.matching.runRound(deliveryId, round);
 
     if (result.exhausted) return;
 
     if (result.offersMade > 0) {
-      await this.dispatcher.scheduleRoundExpiry(deliveryId, round, this.matching.offerWindowSeconds);
+      await this.dispatcher.scheduleRoundExpiry(deliveryId, round, this.matching.offerWindowSeconds, search);
       return;
     }
 
     // Nobody eligible in range: widen and try again, or give up.
-    await this.advance(deliveryId, round);
+    await this.advance(deliveryId, round, search);
   }
 
-  private async expireRound({ deliveryId, round }: DispatchRoundJob): Promise<void> {
+  private async expireRound({ deliveryId, round, search }: DispatchRoundJob): Promise<void> {
     const stillSearching = await this.matching.expireRound(deliveryId, round);
     if (!stillSearching) return;
 
-    await this.advance(deliveryId, round);
+    await this.advance(deliveryId, round, search);
   }
 
-  private async advance(deliveryId: string, round: number): Promise<void> {
+  private async advance(deliveryId: string, round: number, search: number): Promise<void> {
     if (round >= this.matching.roundLimit) {
       await this.matching.expireSearch(deliveryId);
       return;
     }
 
-    await this.dispatcher.scheduleNextRound(deliveryId, round + 1, this.matching.offerWindowSeconds);
+    await this.dispatcher.scheduleNextRound(deliveryId, round + 1, this.matching.offerWindowSeconds, search);
   }
 }

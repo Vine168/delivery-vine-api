@@ -1,12 +1,12 @@
 import { Controller, Get } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import { ApiSuccessResponse } from '../../common/decorators/api-docs.decorator.js';
-import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
-import { ResponseCode as ResponseCodeMeta } from '../../common/decorators/response-code.decorator.js';
-import { ResponseCode } from '../../common/constants/response-codes.js';
-import { AdminSessionService } from './admin-session.service.js';
-import { AdminPermissionDto, AdminSessionDto } from './dto/admin-session.dto.js';
-import { RequirePermissions } from './require-permissions.decorator.js';
+import { ApiSuccessResponse } from '../../../common/decorators/api-docs.decorator.js';
+import { CurrentUser } from '../../../common/decorators/current-user.decorator.js';
+import { ResponseCode as ResponseCodeMeta } from '../../../common/decorators/response-code.decorator.js';
+import { ResponseCode } from '../../../common/constants/response-codes.js';
+import { AdminSessionService } from '../services/admin-session.service.js';
+import { AdminPermissionDto, AdminSessionDto } from '../dto/admin-session.dto.js';
+import { RequirePermissions } from '../require-permissions.decorator.js';
 
 @ApiTags('Admin')
 @Controller({ path: 'admin', version: '1' })

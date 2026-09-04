@@ -1,10 +1,10 @@
 import { Injectable } from '@nestjs/common';
-import { ResponseCode } from '../../common/constants/response-codes.js';
-import { AppException } from '../../common/exceptions/app.exception.js';
-import { PrismaService } from '../../database/prisma.service.js';
-import { FileUrlService } from '../uploads/file-url.service.js';
-import { PERMISSION_CATALOGUE } from './permissions.catalogue.js';
-import type { AdminPermissionDto, AdminSessionDto } from './dto/admin-session.dto.js';
+import { ResponseCode } from '../../../common/constants/response-codes.js';
+import { AppException } from '../../../common/exceptions/app.exception.js';
+import { PrismaService } from '../../../database/prisma.service.js';
+import { FileUrlService } from '../../uploads/file-url.service.js';
+import { PERMISSION_CATALOGUE } from '../permissions.catalogue.js';
+import type { AdminPermissionDto, AdminSessionDto } from '../dto/admin-session.dto.js';
 
 @Injectable()
 export class AdminSessionService {

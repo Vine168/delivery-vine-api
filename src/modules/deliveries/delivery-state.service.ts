@@ -36,6 +36,8 @@ export interface TransitionResult {
   bookingCode: string;
   customerId: string;
   driverId: string | null;
+  /** When the change was written. Matching uses it to tell one search attempt from the next. */
+  at: Date;
 }
 
 /**
@@ -80,12 +82,13 @@ export class DeliveryStateService {
 
     const acceptedFrom = input.expectedFrom ?? [from];
     const timestampField = STATUS_TIMESTAMP_FIELD[input.to];
+    const at = new Date();
 
     const { count } = await tx.delivery.updateMany({
       where: { id: input.deliveryId, status: { in: acceptedFrom }, ...input.where },
       data: {
         status: input.to,
-        ...(timestampField ? { [timestampField]: new Date() } : {}),
+        ...(timestampField ? { [timestampField]: at } : {}),
         ...input.data,
       },
     });
@@ -119,6 +122,7 @@ export class DeliveryStateService {
       bookingCode: delivery.bookingCode,
       customerId: delivery.customerId,
       driverId: delivery.driverId,
+      at,
     };
   }
 

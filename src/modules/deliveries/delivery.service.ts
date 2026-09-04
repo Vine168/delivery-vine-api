@@ -57,7 +57,7 @@ export class DeliveryService {
     const bookingCode = await this.bookingCodes.next();
     const cod = dto.cod?.enabled === true;
 
-    const deliveryId = await this.prisma.$transaction(async (tx) => {
+    const confirmed = await this.prisma.$transaction(async (tx) => {
       const delivery = await tx.delivery.create({
         data: {
           bookingCode,
@@ -160,27 +160,18 @@ export class DeliveryService {
       }
 
       // Confirming is a real transition, so it is audited like every other one.
-      await this.state.transition(tx, {
+      return this.state.transition(tx, {
         deliveryId: delivery.id,
         to: DeliveryStatus.SEARCHING_DRIVER,
         actorType: ActorType.CUSTOMER,
         actorUserId: userId,
         data: { searchStartedAt: new Date() },
       });
-
-      return delivery.id;
     });
 
-    await this.state.publish({
-      deliveryId,
-      from: DeliveryStatus.DRAFT,
-      to: DeliveryStatus.SEARCHING_DRIVER,
-      bookingCode,
-      customerId,
-      driverId: null,
-    });
+    await this.state.publish(confirmed);
 
-    return this.findOne(customerId, deliveryId);
+    return this.findOne(customerId, confirmed.deliveryId);
   }
 
   async findAll(customerId: string, query: ListDeliveriesQueryDto): Promise<PaginatedResult<DeliverySummaryDto>> {

@@ -227,6 +227,13 @@ export const ResponseCode = {
   DEVICE_REGISTERED: 'DEVICE_REGISTERED',
   DEVICE_UNREGISTERED: 'DEVICE_UNREGISTERED',
 
+  // ── Back office ──
+  DASHBOARD_FETCHED: 'DASHBOARD_FETCHED',
+  LIVE_DELIVERIES_FETCHED: 'LIVE_DELIVERIES_FETCHED',
+  DELIVERY_TIMELINE_FETCHED: 'DELIVERY_TIMELINE_FETCHED',
+  DELIVERY_REASSIGNED: 'DELIVERY_REASSIGNED',
+  DELIVERY_NOT_REASSIGNABLE: 'DELIVERY_NOT_REASSIGNABLE',
+
   // ── Uploads ──
   FILE_UPLOADED: 'FILE_UPLOADED',
   FILE_FETCHED: 'FILE_FETCHED',
@@ -275,6 +282,8 @@ export const RESPONSE_MESSAGES: Partial<Record<ResponseCode, string>> = {
   DELIVERY_INVALID_TRANSITION: 'This action is not allowed for the current delivery status.',
   DELIVERY_NOT_CANCELLABLE: 'This delivery can no longer be cancelled.',
   DELIVERY_NO_DRIVER_FOUND: 'No driver is available nearby right now. Please try again shortly.',
+  DELIVERY_NOT_REASSIGNABLE:
+    'Only a delivery with an assigned driver who has not yet collected the package can be reassigned.',
   PROOF_OF_DELIVERY_REQUIRED: 'A proof-of-delivery photo is required before completing this delivery.',
 
   DRIVER_NOT_APPROVED: 'Your driver account has not been approved yet.',

@@ -111,6 +111,37 @@ export class DriverPresenceService {
   }
 
   /**
+   * How many drivers the matcher can actually see right now, and how many of
+   * those are on a job.
+   *
+   * Counted from the same GEO indexes and heartbeat keys matching reads, not
+   * from the availability table — a driver whose app was killed still has an
+   * ONLINE row for a while, and a dashboard that counts those would promise
+   * operators a fleet that is not there.
+   */
+  async countOnline(vehicleTypeCodes: string[]): Promise<{ online: number; busy: number }> {
+    const indexed = new Set<string>();
+
+    for (const code of vehicleTypeCodes) {
+      const members = await this.redis.client.zrange(RedisKey.driverGeoIndex(code), 0, '-1');
+      for (const driverId of members) indexed.add(driverId);
+    }
+
+    if (indexed.size === 0) return { online: 0, busy: 0 };
+
+    const candidates = [...indexed];
+    const presence = await this.redis.client.mget(
+      ...candidates.map((driverId) => RedisKey.driverPresence(driverId)),
+    );
+    const online = candidates.filter((_, index) => presence[index] !== null);
+
+    if (online.length === 0) return { online: 0, busy: 0 };
+
+    const busy = new Set(await this.redis.client.smembers(RedisKey.driversBusy));
+    return { online: online.length, busy: online.filter((driverId) => busy.has(driverId)).length };
+  }
+
+  /**
    * Online drivers of one vehicle type within a radius, nearest first.
    *
    * The GEO index can hold a driver whose heartbeat has lapsed (GEOADD entries

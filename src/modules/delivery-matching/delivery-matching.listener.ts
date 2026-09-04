@@ -21,7 +21,7 @@ export class DeliveryMatchingListener {
 
   @OnEvent(DomainEvent.DELIVERY_CONFIRMED)
   async onConfirmed(event: TransitionResult): Promise<void> {
-    await this.dispatcher.startSearch(event.deliveryId);
+    await this.dispatcher.startSearch(event.deliveryId, event.at.getTime());
   }
 
   @OnEvent(DomainEvent.DELIVERY_CANCELLED)

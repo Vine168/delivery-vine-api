@@ -204,6 +204,15 @@ export class EnvironmentVariables {
   @IsOptional()
   OTP_EXPOSE_IN_RESPONSE = false;
 
+  /**
+   * The timezone business days are reported in. Storage stays UTC; this only
+   * decides where "today" starts on a dashboard.
+   */
+  @IsString()
+  @IsOptional()
+  @MaxLength(64)
+  APP_TIMEZONE = 'Asia/Phnom_Penh';
+
   // ── Delivery / matching ──
   @IsString()
   @IsOptional()

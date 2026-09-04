@@ -11,6 +11,8 @@ export const appConfig = registerAs('app', () => ({
   swaggerEnabled: process.env.SWAGGER_ENABLED !== 'false',
   encryptionKey: process.env.ENCRYPTION_KEY as string,
   bookingCodePrefix: process.env.BOOKING_CODE_PREFIX ?? 'ORD',
+  /** Reporting timezone. Storage is UTC; this is where a business day starts. */
+  timezone: process.env.APP_TIMEZONE ?? 'Asia/Phnom_Penh',
   isProduction: process.env.NODE_ENV === NodeEnv.Production,
 }));
 

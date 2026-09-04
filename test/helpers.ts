@@ -1,5 +1,7 @@
 import request from 'supertest';
 import type { TestHarness } from './app-harness.js';
+import { PERMISSION_CATALOGUE } from '../src/modules/admin/permissions.catalogue.js';
+import { PasswordService } from '../src/modules/auth/services/password.service.js';
 
 export const API = '/api/v1';
 
@@ -204,5 +206,84 @@ export async function completedDelivery(
     deliveryId,
     bookingCode: booking.body.data.bookingCode as string,
     netAmount: earning.netAmount,
+  };
+}
+
+export interface AdminAccount {
+  accessToken: string;
+  userId: string;
+  adminId: string;
+  phone: string;
+}
+
+/**
+ * An operator holding exactly the permissions named — or everything, as a
+ * super admin.
+ *
+ * Built through the database rather than an endpoint because the platform has
+ * no admin self-registration: the first operator is bootstrapped by the seed,
+ * and every one after that is created by another operator. Signing in still
+ * goes through the real login endpoint, so the token is the same one the
+ * dashboard would hold.
+ */
+export async function adminAccount(
+  harness: TestHarness,
+  permissions: string[] = ['admin.access'],
+  options: { superAdmin?: boolean; phone?: string } = {},
+): Promise<AdminAccount> {
+  const phone = options.phone ?? nextPhone();
+  const password = 'Passw0rd1';
+  const passwordHash = await harness.app.get(PasswordService).hash(password);
+
+  const user = await harness.prisma.user.create({
+    data: {
+      phone: `+855${phone.replace(/^0/, '')}`,
+      role: 'ADMIN',
+      status: 'ACTIVE',
+      passwordHash,
+      phoneVerifiedAt: new Date(),
+    },
+    select: { id: true },
+  });
+
+  // Truncation wipes the catalogue, so the rows this operator needs are put
+  // back exactly as the seed would write them.
+  const wanted = PERMISSION_CATALOGUE.filter((permission) => permissions.includes(permission.code));
+  await harness.prisma.permission.createMany({ data: wanted, skipDuplicates: true });
+
+  const stored = await harness.prisma.permission.findMany({
+    where: { code: { in: permissions } },
+    select: { id: true },
+  });
+
+  const role = await harness.prisma.role.create({
+    data: {
+      name: `Test role ${phone}`,
+      slug: `test-role-${phone}`,
+      permissions: { create: stored.map((permission) => ({ permissionId: permission.id })) },
+    },
+    select: { id: true },
+  });
+
+  const profile = await harness.prisma.adminProfile.create({
+    data: {
+      userId: user.id,
+      fullName: 'Ops Operator',
+      roleId: role.id,
+      isSuperAdmin: options.superAdmin ?? false,
+    },
+    select: { id: true },
+  });
+
+  const session = await http(harness)
+    .post(`${API}/auth/login`)
+    .send({ phone, password, role: 'ADMIN' })
+    .expect(200);
+
+  return {
+    accessToken: session.body.data.tokens.accessToken as string,
+    userId: user.id,
+    adminId: profile.id,
+    phone,
   };
 }
