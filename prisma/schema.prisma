@@ -316,6 +316,7 @@ model User {
   idempotencyKeys IdempotencyKey[]
   adminProfile    AdminProfile?
   auditLogs       AuditLog[]                @relation("AuditActor")
+  campaigns       NotificationCampaign[]    @relation("CampaignAuthor")
 
   /// One phone may hold one CUSTOMER account and one DRIVER account.
   @@unique([phone, role])
@@ -1308,6 +1309,54 @@ model Message {
 
 /// The in-app record. Push delivery is tracked separately in PushDispatch so a
 /// failed FCM call can never corrupt business state.
+/// What an operator sent, to whom, and how far it got.
+///
+/// A broadcast is not one action but thousands of rows, so the campaign is
+/// recorded first and a worker fans it out in batches. The counters are what
+/// makes a send that failed halfway explicable rather than mysterious.
+model NotificationCampaign {
+  id              String                 @id @default(cuid(2))
+  title           String
+  body            String
+  type            NotificationType       @default(SYSTEM_ANNOUNCEMENT)
+  audience        CampaignAudience
+  /// The audience's parameters — zone id, explicit user ids, and so on.
+  filters         Json?
+  data            Json?
+  status          CampaignStatus         @default(QUEUED)
+  totalRecipients Int                    @default(0)
+  sentCount       Int                    @default(0)
+  failedCount     Int                    @default(0)
+  failureReason   String?
+  createdByUserId String
+  startedAt       DateTime?              @db.Timestamptz(3)
+  completedAt     DateTime?              @db.Timestamptz(3)
+  createdAt       DateTime               @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime               @updatedAt @db.Timestamptz(3)
+
+  createdBy User @relation("CampaignAuthor", fields: [createdByUserId], references: [id])
+
+  @@index([status, createdAt])
+  @@index([createdAt])
+}
+
+enum CampaignAudience {
+  ALL_CUSTOMERS
+  ALL_DRIVERS
+  APPROVED_DRIVERS
+  ONLINE_DRIVERS
+  DRIVERS_IN_ZONE
+  SPECIFIC_USERS
+}
+
+enum CampaignStatus {
+  QUEUED
+  SENDING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
 model Notification {
   id         String           @id @default(cuid(2))
   userId     String

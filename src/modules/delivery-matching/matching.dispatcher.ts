@@ -83,7 +83,11 @@ export class MatchingDispatcher {
     );
   }
 
+  /**
+   * BullMQ rejects a custom job id containing a colon — it uses colons in its
+   * own key namespace — so these are joined with dashes.
+   */
   private jobId(kind: string, deliveryId: string, search: number, round: number): string {
-    return `${kind}:${deliveryId}:${search}:${round}`;
+    return `${kind}-${deliveryId}-${search}-${round}`;
   }
 }

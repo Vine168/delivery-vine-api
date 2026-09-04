@@ -8,6 +8,7 @@ import { FakeMapProvider } from './fake-map.provider.js';
 import { createValidationPipe } from '../src/common/pipes/validation.pipe.js';
 import { PrismaService } from '../src/database/prisma.service.js';
 import { DeliveryMatchingService } from '../src/modules/delivery-matching/delivery-matching.service.js';
+import { AdminNotificationsService } from '../src/modules/admin/services/admin-notifications.service.js';
 import { WithdrawalsService } from '../src/modules/withdrawals/withdrawals.service.js';
 import { RedisService } from '../src/redis/redis.service.js';
 
@@ -22,6 +23,8 @@ export interface TestHarness {
   matching: DeliveryMatchingService;
   /** Settlement is an admin action; specs drive it through the service. */
   withdrawals: WithdrawalsService;
+  /** Campaign sending is queued in production; specs run it explicitly. */
+  campaigns: AdminNotificationsService;
   close: () => Promise<void>;
   reset: () => Promise<void>;
   expireOtpCooldowns: () => Promise<void>;
@@ -43,7 +46,7 @@ export async function createTestHarness(): Promise<TestHarness> {
     .useValue(map)
     .compile();
 
-  const app = moduleRef.createNestApplication<NestExpressApplication>({ logger: false });
+  const app = moduleRef.createNestApplication<NestExpressApplication>({ logger: process.env.E2E_LOGS === '1' ? undefined : false });
   app.setGlobalPrefix('api', { exclude: ['health', 'health/live'] });
   app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
   app.useGlobalPipes(createValidationPipe());
@@ -60,6 +63,7 @@ export async function createTestHarness(): Promise<TestHarness> {
   const redis = app.get(RedisService);
   const matching = app.get(DeliveryMatchingService);
   const withdrawals = app.get(WithdrawalsService);
+  const campaigns = app.get(AdminNotificationsService);
 
   /**
    * Reference data every e2e spec can rely on. Truncation wipes the seeded
@@ -152,6 +156,7 @@ export async function createTestHarness(): Promise<TestHarness> {
     map,
     matching,
     withdrawals,
+    campaigns,
     url,
     reset,
     expireOtpCooldowns,

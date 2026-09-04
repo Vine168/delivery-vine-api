@@ -17,6 +17,7 @@ import { AdminPromoCodesController } from './controllers/admin-promo-codes.contr
 import { AdminSettingsController } from './controllers/admin-settings.controller.js';
 import { AdminZonesController } from './controllers/admin-zones.controller.js';
 import { AdminAuditController } from './controllers/admin-audit.controller.js';
+import { AdminNotificationsController } from './controllers/admin-notifications.controller.js';
 import {
   AdminAdministratorsController,
   AdminRolesController,
@@ -27,8 +28,17 @@ import { AdminDeliveriesService } from './services/admin-deliveries.service.js';
 import { AdminDriversService } from './services/admin-drivers.service.js';
 import { AdminCatalogueService } from './services/admin-catalogue.service.js';
 import { AdminFinanceService } from './services/admin-finance.service.js';
+import { AdminNotificationsService } from './services/admin-notifications.service.js';
 import { AdminTeamService } from './services/admin-team.service.js';
+import { CampaignProcessor } from './services/campaign.processor.js';
 import { AdminSessionService } from './services/admin-session.service.js';
+
+/**
+ * The campaign worker follows the same rule as the matching one: a BullMQ
+ * worker holds a blocking Redis connection permanently, so an instance that
+ * will never dispatch — a test run, an API-only node — should not start one.
+ */
+const campaignWorker = process.env.MATCHING_ENABLED === 'false' ? [] : [CampaignProcessor];
 
 /**
  * The back office.
@@ -63,6 +73,7 @@ import { AdminSessionService } from './services/admin-session.service.js';
     AdminRolesController,
     AdminAdministratorsController,
     AdminAuditController,
+    AdminNotificationsController,
   ],
   providers: [
     AdminSessionService,
@@ -73,6 +84,8 @@ import { AdminSessionService } from './services/admin-session.service.js';
     AdminFinanceService,
     AdminCatalogueService,
     AdminTeamService,
+    AdminNotificationsService,
+    ...campaignWorker,
   ],
   exports: [AdminSessionService],
 })

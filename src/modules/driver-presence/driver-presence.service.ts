@@ -120,6 +120,18 @@ export class DriverPresenceService {
    * operators a fleet that is not there.
    */
   async countOnline(vehicleTypeCodes: string[]): Promise<{ online: number; busy: number }> {
+    const online = await this.onlineDriverIds(vehicleTypeCodes);
+    if (online.length === 0) return { online: 0, busy: 0 };
+
+    const busy = new Set(await this.redis.client.smembers(RedisKey.driversBusy));
+    return { online: online.length, busy: online.filter((driverId) => busy.has(driverId)).length };
+  }
+
+  /**
+   * Exactly the drivers the matcher can see: in a GEO index and with a live
+   * heartbeat. Used for counting them and for reaching them.
+   */
+  async onlineDriverIds(vehicleTypeCodes: string[]): Promise<string[]> {
     const indexed = new Set<string>();
 
     for (const code of vehicleTypeCodes) {
@@ -127,18 +139,14 @@ export class DriverPresenceService {
       for (const driverId of members) indexed.add(driverId);
     }
 
-    if (indexed.size === 0) return { online: 0, busy: 0 };
+    if (indexed.size === 0) return [];
 
     const candidates = [...indexed];
     const presence = await this.redis.client.mget(
       ...candidates.map((driverId) => RedisKey.driverPresence(driverId)),
     );
-    const online = candidates.filter((_, index) => presence[index] !== null);
 
-    if (online.length === 0) return { online: 0, busy: 0 };
-
-    const busy = new Set(await this.redis.client.smembers(RedisKey.driversBusy));
-    return { online: online.length, busy: online.filter((driverId) => busy.has(driverId)).length };
+    return candidates.filter((_, index) => presence[index] !== null);
   }
 
   /**

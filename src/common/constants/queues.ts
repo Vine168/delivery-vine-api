@@ -14,6 +14,7 @@ export const JOB = {
   EXPIRE_SEARCH: 'expire-search',
   // notification
   SEND_PUSH: 'send-push',
+  SEND_CAMPAIGN: 'send-campaign',
   SEND_SMS: 'send-sms',
   // payment
   POLL_PAYMENT_STATUS: 'poll-payment-status',
