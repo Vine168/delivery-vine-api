@@ -6,6 +6,7 @@ import {
   ApiSuccessResponse,
 } from '../../../common/decorators/api-docs.decorator.js';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator.js';
+import { RateLimit } from '../../../common/decorators/rate-limit.decorator.js';
 import { ResponseCode as ResponseCodeMeta } from '../../../common/decorators/response-code.decorator.js';
 import { ResponseCode } from '../../../common/constants/response-codes.js';
 import { IdParamDto } from '../../../common/dto/id-param.dto.js';
@@ -43,6 +44,7 @@ export class AdminNotificationsController {
 
   @Post()
   @RequirePermissions('notifications.send')
+  @RateLimit({ bucket: 'admin:broadcast', limit: 5, windowSeconds: 300, by: 'user' })
   @ResponseCodeMeta(ResponseCode.CAMPAIGN_QUEUED)
   @ApiOperation({
     summary: 'Send a notification',

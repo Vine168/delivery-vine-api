@@ -88,13 +88,30 @@ it, but cannot edit someone's profile or addresses on their behalf. Suspension
 leaves deliveries already in motion to finish; the driver is owed for them.
 
 **Finance** — `approve` decides and moves nothing; `settle` records that the
-bank actually paid and is the only call that debits a wallet. Settling requires
+bank actually paid and is the only call that debits a wallet for a payout. Settling requires
 the provider's reference. Reviewing and settling are separate permissions, so
 the person who approves a payout need not be the person who can move money. The
 full bank account number is revealed by exactly one endpoint, behind the settle
 permission, and every read of it is audited. Manual adjustments go through the
 ledger with a reason on the driver's own statement; the balance is never written
 directly.
+
+**Cash and driver debt.** A driver paid at the door is handed the whole fare,
+commission included, so settlement charges them the platform's share rather
+than crediting them theirs. Their wallet goes negative — that is the correct
+description of the position, not an error — and `POST
+/admin/finance/drivers/:id/remittance` records the cash when they hand it in.
+An overdrawn wallet cannot fund a withdrawal, and the finance overview reports
+`owedByDrivers` as a receivable beside `walletBalance` as a liability rather
+than netting the two.
+
+**Refunds.** `POST /admin/deliveries/:id/refund` records that a customer is
+owed money; `POST /admin/finance/refunds/:id/settle` records that it actually
+went back, with the provider's reference. Recording a refund moves nothing —
+the provider does — which is why the two are separate, exactly as with payouts.
+Partial refunds cannot collectively exceed what was taken, counting those
+already in flight. Cash bookings are refused: the platform never held that
+fare.
 
 **Pricing, zones and promos** — editing changes what the *next* booking costs
 and nothing already priced. Every delivery stores the amount it was quoted, the
@@ -136,6 +153,15 @@ rows: past that the request is refused rather than silently truncated, because a
 file that stops halfway and looks complete is how figures quietly go missing.
 Every export is audited.
 
+## Retries
+
+Endpoints that spend money honour an `Idempotency-Key` header: booking,
+withdrawal requests, wallet adjustments and remittances. A repeat with the same
+key returns the original response; the same key with a different body is
+refused; a request that failed releases its key so a corrected retry works.
+Without the header the endpoint behaves as it always did, so this is opt-in for
+clients — but any screen that spends money should be sending one.
+
 ## Conventions
 
 Everything the mobile API does, the back office does too: the `{success, code,
@@ -155,3 +181,6 @@ integer minor units with an explicit currency, offset pagination with
 | `admin-team.e2e-spec.ts` | Roles, administrators, escalation and lockout safeguards |
 | `admin-notifications.e2e-spec.ts` | Audiences, campaign delivery, history |
 | `admin-exports.e2e-spec.ts` | CSV correctness, injection handling, permissions |
+| `cash-settlement.e2e-spec.ts` | Cash vs prepaid settlement, driver debt, remittance, reconciliation |
+| `refunds.e2e-spec.ts` | Refund obligations, partial refunds, settlement |
+| `idempotency.e2e-spec.ts` | Retries, double taps, key reuse |

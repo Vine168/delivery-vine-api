@@ -7,6 +7,7 @@ import {
   ApiSuccessResponse,
 } from '../../../common/decorators/api-docs.decorator.js';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator.js';
+import { RateLimit } from '../../../common/decorators/rate-limit.decorator.js';
 import { Idempotent } from '../../../common/decorators/idempotent.decorator.js';
 import { ResponseCode as ResponseCodeMeta } from '../../../common/decorators/response-code.decorator.js';
 import { ResponseCode } from '../../../common/constants/response-codes.js';
@@ -78,6 +79,7 @@ export class AdminFinanceController {
 
   @Get('withdrawals/export')
   @RequirePermissions('finance.export')
+  @RateLimit({ bucket: 'admin:export', limit: 10, windowSeconds: 300, by: 'user' })
   @ApiOperation({
     summary: 'Download payout requests as a spreadsheet',
     description:
@@ -108,6 +110,9 @@ export class AdminFinanceController {
 
   @Get('withdrawals/:id/payout-details')
   @RequirePermissions('finance.withdrawals.settle')
+  // Reading bank details in bulk is what exfiltration looks like; a payout
+  // run reads them one at a time.
+  @RateLimit({ bucket: 'admin:payout-details', limit: 60, windowSeconds: 300, by: 'user' })
   @ResponseCodeMeta(ResponseCode.PAYOUT_DETAILS_FETCHED)
   @ApiOperation({
     summary: 'The full bank account number',

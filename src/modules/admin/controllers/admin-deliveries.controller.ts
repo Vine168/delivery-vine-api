@@ -7,6 +7,7 @@ import {
   ApiSuccessResponse,
 } from '../../../common/decorators/api-docs.decorator.js';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator.js';
+import { RateLimit } from '../../../common/decorators/rate-limit.decorator.js';
 import { ResponseCode as ResponseCodeMeta } from '../../../common/decorators/response-code.decorator.js';
 import { ResponseCode } from '../../../common/constants/response-codes.js';
 import { IdParamDto } from '../../../common/dto/id-param.dto.js';
@@ -67,6 +68,7 @@ export class AdminDeliveriesController {
 
   @Get('export')
   @RequirePermissions('deliveries.export')
+  @RateLimit({ bucket: 'admin:export', limit: 10, windowSeconds: 300, by: 'user' })
   @ApiOperation({
     summary: 'Download deliveries as a spreadsheet',
     description:

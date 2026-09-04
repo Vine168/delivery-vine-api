@@ -91,7 +91,7 @@ dispute.
 ## Layout
 
 ```
-prisma/schema.prisma      53 tables; migrations include raw-SQL constraints
+prisma/schema.prisma      54 tables; migrations include raw-SQL constraints
 src/common/               envelope, filters, guards, decorators, utils
 src/config/               one namespace per concern + env validation
 src/database/             Prisma service and error translation
@@ -104,8 +104,8 @@ docs/back-office.md       how the admin API is meant to be used
 
 ## What is built
 
-Nine phases for the mobile apps, then eight for the back office. 174
-endpoints (79 of them back office), 3 socket messages, 481 tests.
+Nine phases for the mobile apps, eight for the back office, then a
+correctness pass. 179 endpoints, 3 socket messages, 517 tests.
 
 | Area | Highlights |
 | --- | --- |
@@ -117,7 +117,8 @@ endpoints (79 of them back office), 3 socket messages, 481 tests.
 | Realtime | One authenticated socket per app, server-verified rooms, live position and status |
 | Money | Integer minor units, wallet ledger with before/after balances, reservations, ABA PayWay KHQR |
 | Engagement | Ratings, favourite drivers, package templates, chat, notifications |
-| Back office | Permissions and roles, dashboard, delivery support, driver approval, payout settlement, pricing, notifications, audit log, CSV exports |
+| Back office | Permissions and roles, dashboard, delivery support, driver approval, payout settlement, refunds, pricing, notifications, audit log, CSV exports |
+| Correctness | Cash commission charged to the driver rather than given away, idempotent money endpoints, settlement reconciliation, scheduled pruning |
 
 The back office is documented separately in [docs/back-office.md](docs/back-office.md).
 
@@ -133,6 +134,16 @@ rather than code:
 
 Neither pretends to succeed: the OTP response says where the code went, and a
 push attempt is recorded as `SKIPPED` rather than `SENT`.
+
+**Refunds** are recorded and settled by an operator against the provider's own
+reference; the platform does not call a provider refund API. That is a
+deliberate two-step rather than a gap, and it is the same discipline payouts
+use — but it does mean someone issues the refund in the PayWay dashboard.
+
+**COD goods money** — the cash a driver collects on a sender's behalf when
+`codEnabled` is set — is recorded (`codAmount`, `codCollectedAt`) and reported,
+but the platform does not model handing it back to the sender. The delivery
+fee and its commission are fully accounted for; the goods money is not.
 
 **ABA PayWay** is live against sandbox. The supplied merchant account is
 sandbox-only and enabled for USD, so a KHR delivery is refused with an
