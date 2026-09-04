@@ -20,7 +20,9 @@ import {
   AdminLiveDeliveryDto,
   AdminReassignDeliveryDto,
 } from '../dto/admin-delivery.dto.js';
+import { AdminRefundDto, AdminRequestRefundDto } from '../dto/admin-refund.dto.js';
 import { AdminExportService } from '../services/admin-export.service.js';
+import { AdminRefundsService } from '../services/admin-refunds.service.js';
 import { RequirePermissions } from '../require-permissions.decorator.js';
 import { AdminDeliveriesService } from '../services/admin-deliveries.service.js';
 
@@ -29,6 +31,7 @@ import { AdminDeliveriesService } from '../services/admin-deliveries.service.js'
 export class AdminDeliveriesController {
   constructor(
     private readonly deliveries: AdminDeliveriesService,
+    private readonly refunds: AdminRefundsService,
     private readonly exports: AdminExportService,
   ) {}
 
@@ -131,6 +134,29 @@ export class AdminDeliveriesController {
     @Body() dto: AdminCancelDeliveryDto,
   ): Promise<AdminDeliveryDetailDto> {
     return this.deliveries.cancel(userId, params.id, dto);
+  }
+
+  @Post(':id/refund')
+  @HttpCode(HttpStatus.CREATED)
+  @RequirePermissions('finance.refund')
+  @ResponseCodeMeta(ResponseCode.REFUND_REQUESTED)
+  @ApiOperation({
+    summary: 'Record that a customer is owed money back',
+    description:
+      'Records the obligation; it does not move any money — the payment provider does, and `POST /admin/finance/refunds/:id/settle` records that afterwards. Omit the amount to refund everything still outstanding. Refused on a cash booking: the platform never held that fare, the driver was handed it at the door, and booking a refund against a payment that does not exist would put a lie in the accounts.',
+  })
+  @ApiSuccessResponse({ status: 201, code: ResponseCode.REFUND_REQUESTED, type: AdminRefundDto })
+  @ApiErrorResponses(
+    { status: 404, code: ResponseCode.DELIVERY_NOT_FOUND },
+    { status: 422, code: ResponseCode.PAYMENT_NOT_REFUNDABLE },
+    { status: 422, code: ResponseCode.REFUND_EXCEEDS_PAYMENT },
+  )
+  refund(
+    @CurrentUser('userId') userId: string,
+    @Param() params: IdParamDto,
+    @Body() dto: AdminRequestRefundDto,
+  ): Promise<AdminRefundDto> {
+    return this.refunds.request(userId, params.id, dto);
   }
 
   @Post(':id/reassign')

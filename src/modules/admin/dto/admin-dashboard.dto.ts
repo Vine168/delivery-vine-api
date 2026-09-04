@@ -125,6 +125,12 @@ export class AdminAttentionDto {
 
   @ApiProperty({
     example: 2,
+    description: 'Refunds recorded as owed but not yet sent back to the customer.',
+  })
+  refunds: number;
+
+  @ApiProperty({
+    example: 2,
     description: 'Deliveries that have been searching for a driver for more than ten minutes.',
   })
   stalledDeliveries: number;

@@ -317,6 +317,8 @@ model User {
   adminProfile    AdminProfile?
   auditLogs       AuditLog[]                @relation("AuditActor")
   campaigns       NotificationCampaign[]    @relation("CampaignAuthor")
+  refundsRequested Refund[]                 @relation("RefundRequester")
+  refundsSettled   Refund[]                 @relation("RefundSettler")
 
   /// One phone may hold one CUSTOMER account and one DRIVER account.
   @@unique([phone, role])
@@ -822,6 +824,7 @@ model Delivery {
   payments      Payment[]
   rating        DeliveryRating?
   earning       DriverEarning?
+  refunds       Refund[]
   proof         ProofOfDelivery?
   conversation  Conversation?
   promoUsage    PromoCodeUsage?
@@ -1125,10 +1128,51 @@ model Payment {
 
   delivery     Delivery             @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
   transactions PaymentTransaction[]
+  refunds      Refund[]
 
   @@index([deliveryId, status])
   @@index([status, expiresAt])
   @@index([providerRef])
+}
+
+/// Money going back to a customer.
+///
+/// Modelled like a withdrawal because it is the same shape of problem: an
+/// obligation an operator decides on, and a separate fact about whether the
+/// money actually moved. Recording a refund does not move it — the provider
+/// does, and someone records that afterwards with the reference to prove it.
+model Refund {
+  id                String       @id @default(cuid(2))
+  paymentId         String
+  deliveryId        String
+  amount            Int
+  currency          Currency
+  status            RefundStatus @default(PENDING)
+  reason            String
+  providerRef       String?
+  failureReason     String?
+  requestedByUserId String
+  settledByUserId   String?
+  requestedAt       DateTime     @default(now()) @db.Timestamptz(3)
+  settledAt         DateTime?    @db.Timestamptz(3)
+  createdAt         DateTime     @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime     @updatedAt @db.Timestamptz(3)
+
+  payment     Payment  @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  delivery    Delivery @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+  requestedBy User     @relation("RefundRequester", fields: [requestedByUserId], references: [id])
+  settledBy   User?    @relation("RefundSettler", fields: [settledByUserId], references: [id], onDelete: SetNull)
+
+  @@index([paymentId])
+  @@index([status, requestedAt])
+  @@index([deliveryId])
+}
+
+enum RefundStatus {
+  PENDING
+  SETTLED
+  FAILED
+  CANCELLED
 }
 
 /// Append-only log of every provider interaction (charge, poll, webhook,

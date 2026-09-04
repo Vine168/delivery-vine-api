@@ -29,6 +29,7 @@ import { AdminDriversService } from './services/admin-drivers.service.js';
 import { AdminCatalogueService } from './services/admin-catalogue.service.js';
 import { AdminExportService } from './services/admin-export.service.js';
 import { AdminFinanceService } from './services/admin-finance.service.js';
+import { AdminRefundsService } from './services/admin-refunds.service.js';
 import { AdminNotificationsService } from './services/admin-notifications.service.js';
 import { AdminTeamService } from './services/admin-team.service.js';
 import { CampaignProcessor } from './services/campaign.processor.js';
@@ -87,6 +88,7 @@ const campaignWorker = process.env.MATCHING_ENABLED === 'false' ? [] : [Campaign
     AdminTeamService,
     AdminNotificationsService,
     AdminExportService,
+    AdminRefundsService,
     ...campaignWorker,
   ],
   exports: [AdminSessionService],

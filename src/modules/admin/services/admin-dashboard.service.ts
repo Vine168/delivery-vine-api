@@ -9,6 +9,7 @@ import {
   DeliveryStatus,
   DocumentReviewStatus,
   DriverApprovalStatus,
+  RefundStatus,
   WithdrawalStatus,
 } from '../../../generated/prisma/enums.js';
 import { DriverPresenceService } from '../../driver-presence/driver-presence.service.js';
@@ -84,6 +85,7 @@ export class AdminDashboardService {
       orderingCustomers,
       pendingDocuments,
       pendingWithdrawals,
+      pendingRefunds,
       vehicleTypeCodes,
       trendRows,
     ] = await Promise.all([
@@ -118,6 +120,7 @@ export class AdminDashboardService {
       this.countOrderingCustomers(from, toExclusive),
       this.prisma.driverDocument.count({ where: { status: DocumentReviewStatus.PENDING } }),
       this.prisma.withdrawal.count({ where: { status: WithdrawalStatus.PENDING } }),
+      this.prisma.refund.count({ where: { status: RefundStatus.PENDING } }),
       this.prisma.vehicleType.findMany({ where: { isActive: true }, select: { code: true } }),
       this.trendRows(from, toExclusive),
     ]);
@@ -173,6 +176,7 @@ export class AdminDashboardService {
         driverApprovals: driversOf(DriverApprovalStatus.PENDING_APPROVAL),
         documentReviews: pendingDocuments,
         withdrawals: pendingWithdrawals,
+        refunds: pendingRefunds,
         stalledDeliveries: stalledNow,
       },
       trend: this.toTrend(trendRows, from, to),

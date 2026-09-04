@@ -7,6 +7,7 @@ import {
   ApiSuccessResponse,
 } from '../../../common/decorators/api-docs.decorator.js';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator.js';
+import { Idempotent } from '../../../common/decorators/idempotent.decorator.js';
 import { ResponseCode as ResponseCodeMeta } from '../../../common/decorators/response-code.decorator.js';
 import { ResponseCode } from '../../../common/constants/response-codes.js';
 import { IdParamDto } from '../../../common/dto/id-param.dto.js';
@@ -31,7 +32,9 @@ import {
   AdminWithdrawalRowDto,
 } from '../dto/admin-finance.dto.js';
 import { RequirePermissions } from '../require-permissions.decorator.js';
+import { AdminRefundDto, AdminRefundQueryDto, AdminSettleRefundDto } from '../dto/admin-refund.dto.js';
 import { AdminExportService } from '../services/admin-export.service.js';
+import { AdminRefundsService } from '../services/admin-refunds.service.js';
 import { AdminFinanceService } from '../services/admin-finance.service.js';
 
 @ApiTags('Admin — Finance')
@@ -39,6 +42,7 @@ import { AdminFinanceService } from '../services/admin-finance.service.js';
 export class AdminFinanceController {
   constructor(
     private readonly finance: AdminFinanceService,
+    private readonly refunds: AdminRefundsService,
     private readonly exports: AdminExportService,
   ) {}
 
@@ -208,6 +212,64 @@ export class AdminFinanceController {
     return this.finance.failWithdrawal(userId, params.id, dto);
   }
 
+  // ── Refunds ────────────────────────────────────────────────────────────
+
+  @Get('refunds')
+  @RequirePermissions('finance.view')
+  @ResponseCodeMeta(ResponseCode.REFUNDS_FETCHED)
+  @ApiOperation({
+    summary: 'Money owed back to customers',
+    description: 'Oldest first — someone waiting on their money should not queue behind this morning’s case.',
+  })
+  @ApiPaginatedResponse({ code: ResponseCode.REFUNDS_FETCHED, type: AdminRefundDto })
+  findRefunds(@Query() query: AdminRefundQueryDto): Promise<PaginatedResult<AdminRefundDto>> {
+    return this.refunds.findAll(query);
+  }
+
+  @Post('refunds/:id/settle')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermissions('finance.refund')
+  @ResponseCodeMeta(ResponseCode.REFUND_SETTLED)
+  @ApiOperation({
+    summary: 'Record that the money went back',
+    description:
+      'Recording a refund never moves money — the payment provider does — so this is the separate fact that it actually happened, and it requires the provider’s reference. Once every riel of a payment has gone back the payment itself is marked REFUNDED; a partial refund leaves it PAID, because it is still, mostly, a payment.',
+  })
+  @ApiSuccessResponse({ code: ResponseCode.REFUND_SETTLED, type: AdminRefundDto })
+  @ApiErrorResponses(
+    { status: 400, code: ResponseCode.VALIDATION_ERROR },
+    { status: 404, code: ResponseCode.REFUND_NOT_FOUND },
+    { status: 409, code: ResponseCode.REFUND_NOT_SETTLEABLE },
+  )
+  settleRefund(
+    @CurrentUser('userId') userId: string,
+    @Param() params: IdParamDto,
+    @Body() dto: AdminSettleRefundDto,
+  ): Promise<AdminRefundDto> {
+    return this.refunds.settle(userId, params.id, dto);
+  }
+
+  @Post('refunds/:id/fail')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermissions('finance.refund')
+  @ResponseCodeMeta(ResponseCode.REFUND_FAILED)
+  @ApiOperation({
+    summary: 'Record that the refund did not go through',
+    description: 'The obligation stands — the customer is still owed — but this attempt is closed.',
+  })
+  @ApiSuccessResponse({ code: ResponseCode.REFUND_FAILED, type: AdminRefundDto })
+  @ApiErrorResponses(
+    { status: 404, code: ResponseCode.REFUND_NOT_FOUND },
+    { status: 409, code: ResponseCode.REFUND_NOT_SETTLEABLE },
+  )
+  failRefund(
+    @CurrentUser('userId') userId: string,
+    @Param() params: IdParamDto,
+    @Body() dto: AdminReasonDto,
+  ): Promise<AdminRefundDto> {
+    return this.refunds.fail(userId, params.id, dto);
+  }
+
   // ── Ledgers ────────────────────────────────────────────────────────────
 
   @Get('earnings')
@@ -257,6 +319,7 @@ export class AdminFinanceController {
 
   @Post('drivers/:id/remittance')
   @HttpCode(HttpStatus.CREATED)
+  @Idempotent()
   @RequirePermissions('finance.remittance')
   @ResponseCodeMeta(ResponseCode.REMITTANCE_RECORDED)
   @ApiOperation({
@@ -283,6 +346,7 @@ export class AdminFinanceController {
 
   @Post('drivers/:id/wallet/adjust')
   @HttpCode(HttpStatus.CREATED)
+  @Idempotent()
   @RequirePermissions('finance.adjust')
   @ResponseCodeMeta(ResponseCode.WALLET_ADJUSTED)
   @ApiOperation({

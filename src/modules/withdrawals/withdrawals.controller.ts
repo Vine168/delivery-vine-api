@@ -2,6 +2,7 @@ import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Put, Query } 
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { ApiErrorResponses, ApiPaginatedResponse, ApiSuccessResponse } from '../../common/decorators/api-docs.decorator.js';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
+import { Idempotent } from '../../common/decorators/idempotent.decorator.js';
 import { ResponseCode as ResponseCodeMeta } from '../../common/decorators/response-code.decorator.js';
 import { Roles } from '../../common/decorators/roles.decorator.js';
 import { ResponseCode } from '../../common/constants/response-codes.js';
@@ -53,6 +54,7 @@ export class WithdrawalsController {
 
   @Post('withdrawals')
   @HttpCode(HttpStatus.CREATED)
+  @Idempotent()
   @ResponseCodeMeta(ResponseCode.WITHDRAWAL_REQUESTED)
   @ApiOperation({
     summary: 'Request a payout',

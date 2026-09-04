@@ -52,6 +52,12 @@ export const PERMISSION_CATALOGUE: PermissionDefinition[] = [
     action: 'Record cash',
     description: 'Record cash handed in by a driver against what they owe',
   },
+  {
+    code: 'finance.refund',
+    module: 'Finance',
+    action: 'Refund',
+    description: 'Refund a customer and record that the money went back',
+  },
   { code: 'finance.adjust', module: 'Finance', action: 'Adjust', description: 'Credit or debit a driver wallet manually' },
   { code: 'finance.export', module: 'Finance', action: 'Export', description: 'Export financial records' },
 
@@ -133,6 +139,7 @@ export const SYSTEM_ROLES: { name: string; slug: string; description: string; pe
       'finance.withdrawals.review',
       'finance.withdrawals.settle',
       'finance.remittance',
+      'finance.refund',
       'finance.export',
       'pricing.view',
       'pricing.manage',

@@ -8,6 +8,7 @@ import { JwtAuthGuard } from './common/guards/jwt-auth.guard.js';
 import { RateLimitGuard } from './common/guards/rate-limit.guard.js';
 import { RolesGuard } from './common/guards/roles.guard.js';
 import { PermissionsGuard } from './modules/admin/permissions.guard.js';
+import { IdempotencyInterceptor } from './common/interceptors/idempotency.interceptor.js';
 import { ResponseInterceptor } from './common/interceptors/response.interceptor.js';
 import { buildLoggerOptions } from './common/logger/logger.config.js';
 import { RequestContextMiddleware } from './common/middleware/request-context.middleware.js';
@@ -99,6 +100,10 @@ import { VehicleTypesModule } from './modules/vehicle-types/vehicle-types.module
     { provide: APP_GUARD, useClass: PermissionsGuard },
     { provide: APP_GUARD, useClass: RateLimitGuard },
     { provide: APP_INTERCEPTOR, useClass: ResponseInterceptor },
+    // Registered after the envelope so it sits inside it: what a replay
+    // stores and returns is the handler's own payload, which the envelope
+    // then wraps exactly as it wrapped the original.
+    { provide: APP_INTERCEPTOR, useClass: IdempotencyInterceptor },
     { provide: APP_FILTER, useClass: AllExceptionsFilter },
   ],
 })

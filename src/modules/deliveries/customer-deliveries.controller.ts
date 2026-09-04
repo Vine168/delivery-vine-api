@@ -2,6 +2,7 @@ import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Query } from 
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { ApiErrorResponses, ApiPaginatedResponse, ApiSuccessResponse } from '../../common/decorators/api-docs.decorator.js';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
+import { Idempotent } from '../../common/decorators/idempotent.decorator.js';
 import { RateLimit } from '../../common/decorators/rate-limit.decorator.js';
 import { ResponseCode as ResponseCodeMeta } from '../../common/decorators/response-code.decorator.js';
 import { Roles } from '../../common/decorators/roles.decorator.js';
@@ -59,6 +60,7 @@ export class CustomerDeliveriesController {
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
+  @Idempotent()
   @RateLimit({ bucket: 'delivery:create', limit: 30, windowSeconds: 3600, by: 'user' })
   @ResponseCodeMeta(ResponseCode.DELIVERY_CREATED)
   @ApiOperation({
