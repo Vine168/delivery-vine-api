@@ -123,6 +123,33 @@ export class WalletService {
   }
 
   /**
+   * Takes money the driver owes the platform, even into the negative.
+   *
+   * The one deliberate overdraft in the system. A driver paid in cash at the
+   * door is already holding the whole fare, commission included, so the
+   * platform's share is charged to their account rather than credited from it
+   * — and unlike a withdrawal, this cannot be refused for want of funds. The
+   * debt is real whether or not the wallet can cover it; refusing to record it
+   * would simply lose the platform its commission, which is the bug this
+   * exists to fix.
+   *
+   * Withdrawals keep using `debit`, which will not overdraw. Nothing else may
+   * call this.
+   */
+  async charge(input: LedgerEntryInput, tx: Tx): Promise<LedgerEntry> {
+    this.assertPositive(input.amount);
+    const wallet = await this.getOrCreate(input.userId, input.currency, tx);
+
+    await tx.$executeRaw`
+      UPDATE "Wallet"
+      SET "balance" = "balance" - ${input.amount}, "version" = "version" + 1, "updatedAt" = now()
+      WHERE "id" = ${wallet.id}
+    `;
+
+    return this.record(tx, wallet.id, input, LedgerDirection.DEBIT, -input.amount);
+  }
+
+  /**
    * Earmarks money for a pending withdrawal without removing it.
    *
    * The funds stay in `balance` (so the ledger still balances) but leave the
@@ -176,9 +203,17 @@ export class WalletService {
     return { before: wallet.balance + amount, after: wallet.balance };
   }
 
-  /** Spendable money: the balance minus anything already promised. */
+  /**
+   * Spendable money: the balance minus anything already promised, and never
+   * below zero — an overdrawn wallet has nothing to spend, it has a debt.
+   */
   availableOf(wallet: { balance: number; reservedBalance: number }): number {
-    return wallet.balance - wallet.reservedBalance;
+    return Math.max(0, wallet.balance - wallet.reservedBalance);
+  }
+
+  /** What the driver owes the platform: an overdraft, as a positive number. */
+  owedOf(wallet: { balance: number }): number {
+    return Math.max(0, -wallet.balance);
   }
 
   /**

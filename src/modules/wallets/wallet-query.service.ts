@@ -22,6 +22,7 @@ export class WalletQueryService {
       balance: wallet.balance,
       reservedBalance: wallet.reservedBalance,
       availableBalance: this.wallets.availableOf(wallet),
+      amountOwed: this.wallets.owedOf(wallet),
       updatedAt: wallet.updatedAt.toISOString(),
     }));
   }

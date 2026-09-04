@@ -90,7 +90,7 @@ describe('Back office — CSV exports (e2e)', () => {
 
   describe('deliveries', () => {
     it('returns a downloadable file, not the response envelope', async () => {
-      await completedDelivery(harness, customer, driver, vehicleTypeId);
+      await completedDelivery(harness, customer, driver, vehicleTypeId, 'ABA_KHQR');
 
       const response = await http(harness)
         .get(`${API}/admin/deliveries/export`)
@@ -105,7 +105,7 @@ describe('Back office — CSV exports (e2e)', () => {
     });
 
     it('writes money as minor units and as an exact decimal, with the currency', async () => {
-      const delivery = await completedDelivery(harness, customer, driver, vehicleTypeId);
+      const delivery = await completedDelivery(harness, customer, driver, vehicleTypeId, 'ABA_KHQR');
       const settled = await harness.prisma.delivery.findUniqueOrThrow({
         where: { id: delivery.deliveryId },
       });
@@ -132,7 +132,7 @@ describe('Back office — CSV exports (e2e)', () => {
     });
 
     it('writes dollars with two decimal places beside the minor units', async () => {
-      const delivery = await completedDelivery(harness, customer, driver, vehicleTypeId);
+      const delivery = await completedDelivery(harness, customer, driver, vehicleTypeId, 'ABA_KHQR');
       await harness.prisma.delivery.update({
         where: { id: delivery.deliveryId },
         data: { currency: 'USD', totalAmount: 1_580, commissionAmount: 296, driverEarningAmount: 1_284 },
@@ -153,7 +153,7 @@ describe('Back office — CSV exports (e2e)', () => {
     });
 
     it('exports exactly what the filters select', async () => {
-      await completedDelivery(harness, customer, driver, vehicleTypeId);
+      await completedDelivery(harness, customer, driver, vehicleTypeId, 'ABA_KHQR');
 
       const cancelled = await http(harness)
         .post(`${API}/mobile/customer/deliveries`)
@@ -194,7 +194,7 @@ describe('Back office — CSV exports (e2e)', () => {
     });
 
     it('keeps an address containing a comma in a single column', async () => {
-      await completedDelivery(harness, customer, driver, vehicleTypeId);
+      await completedDelivery(harness, customer, driver, vehicleTypeId, 'ABA_KHQR');
       await harness.prisma.delivery.updateMany({
         data: { pickupAddress: 'Street 271, Toul Kork, Phnom Penh' },
       });
@@ -207,7 +207,7 @@ describe('Back office — CSV exports (e2e)', () => {
     });
 
     it('neutralises a value a spreadsheet would run as a formula', async () => {
-      await completedDelivery(harness, customer, driver, vehicleTypeId);
+      await completedDelivery(harness, customer, driver, vehicleTypeId, 'ABA_KHQR');
       await harness.prisma.customerProfile.updateMany({
         where: { id: customer.customerId as string },
         data: { fullName: '=HYPERLINK("http://evil","Click")' },
@@ -250,7 +250,7 @@ describe('Back office — CSV exports (e2e)', () => {
     });
 
     it('exports customers with their booking counts', async () => {
-      await completedDelivery(harness, customer, driver, vehicleTypeId);
+      await completedDelivery(harness, customer, driver, vehicleTypeId, 'ABA_KHQR');
 
       const response = await http(harness).get(`${API}/admin/customers/export`).set(asAdmin()).expect(200);
       const { header, rows } = parseCsv(response.text);
@@ -263,8 +263,8 @@ describe('Back office — CSV exports (e2e)', () => {
 
   describe('withdrawals', () => {
     it('never puts a full account number in the file', async () => {
-      await completedDelivery(harness, customer, driver, vehicleTypeId);
-      await completedDelivery(harness, customer, driver, vehicleTypeId);
+      await completedDelivery(harness, customer, driver, vehicleTypeId, 'ABA_KHQR');
+      await completedDelivery(harness, customer, driver, vehicleTypeId, 'ABA_KHQR');
 
       await http(harness)
         .put(`${API}/mobile/driver/withdrawal-settings`)
@@ -294,7 +294,7 @@ describe('Back office — CSV exports (e2e)', () => {
 
   describe('safeguards', () => {
     it('refuses rather than truncating an export that is too large', async () => {
-      await completedDelivery(harness, customer, driver, vehicleTypeId);
+      await completedDelivery(harness, customer, driver, vehicleTypeId, 'ABA_KHQR');
 
       // Pretend the filter covers more rows than an export may carry.
       const { AdminExportService } = await import(
@@ -314,7 +314,7 @@ describe('Back office — CSV exports (e2e)', () => {
     });
 
     it('records who exported what', async () => {
-      await completedDelivery(harness, customer, driver, vehicleTypeId);
+      await completedDelivery(harness, customer, driver, vehicleTypeId, 'ABA_KHQR');
       await http(harness).get(`${API}/admin/deliveries/export`).set(asAdmin()).expect(200);
 
       const audit = await harness.prisma.auditLog.findFirstOrThrow({

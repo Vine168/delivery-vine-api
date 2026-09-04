@@ -35,6 +35,7 @@ import { EarningsModule } from './modules/earnings/earnings.module.js';
 import { DriversModule } from './modules/drivers/drivers.module.js';
 import { HealthModule } from './modules/health/health.module.js';
 import { LocationsModule } from './modules/locations/locations.module.js';
+import { MaintenanceModule } from './modules/maintenance/maintenance.module.js';
 import { PricingModule } from './modules/pricing/pricing.module.js';
 import { PaymentsModule } from './modules/payments/payments.module.js';
 import { PromoCodesModule } from './modules/promo-codes/promo-codes.module.js';
@@ -85,6 +86,7 @@ import { VehicleTypesModule } from './modules/vehicle-types/vehicle-types.module
     ChatModule,
     NotificationsModule,
     RealtimeModule,
+    MaintenanceModule,
     HealthModule,
   ],
   providers: [

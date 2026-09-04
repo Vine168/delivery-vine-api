@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createTestHarness, type TestHarness } from './app-harness.js';
+import { WalletService } from '../src/modules/wallets/wallet.service.js';
 import { API, activate, completedDelivery, http, readyDriver, type ActivatedAccount } from './helpers.js';
 
 const NEARBY = { latitude: 11.557, longitude: 104.929 };
@@ -77,7 +78,7 @@ describe('Wallet, earnings and withdrawals (e2e)', () => {
 
   describe('earning from a delivery', () => {
     it('credits the wallet when a delivery completes', async () => {
-      const delivery = await completedDelivery(harness, customer, driver, vehicleTypeId);
+      const delivery = await completedDelivery(harness, customer, driver, vehicleTypeId, 'ABA_KHQR');
 
       const balances = await wallet();
       expect(balances.balance).toBe(delivery.netAmount);
@@ -101,7 +102,7 @@ describe('Wallet, earnings and withdrawals (e2e)', () => {
     });
 
     it('moves the earning from PENDING to AVAILABLE and links the ledger entry', async () => {
-      const delivery = await completedDelivery(harness, customer, driver, vehicleTypeId);
+      const delivery = await completedDelivery(harness, customer, driver, vehicleTypeId, 'ABA_KHQR');
 
       const earning = await harness.prisma.driverEarning.findUniqueOrThrow({
         where: { deliveryId: delivery.deliveryId },
@@ -112,7 +113,7 @@ describe('Wallet, earnings and withdrawals (e2e)', () => {
     });
 
     it('pays for a delivery exactly once, however many times settlement runs', async () => {
-      const delivery = await completedDelivery(harness, customer, driver, vehicleTypeId);
+      const delivery = await completedDelivery(harness, customer, driver, vehicleTypeId, 'ABA_KHQR');
 
       // A retried job, a duplicated event, a manual replay — all the same.
       const earnings = harness.app.get(
@@ -131,8 +132,8 @@ describe('Wallet, earnings and withdrawals (e2e)', () => {
     });
 
     it('summarises today’s earnings from the snapshots', async () => {
-      const first = await completedDelivery(harness, customer, driver, vehicleTypeId);
-      const second = await completedDelivery(harness, customer, driver, vehicleTypeId);
+      const first = await completedDelivery(harness, customer, driver, vehicleTypeId, 'ABA_KHQR');
+      const second = await completedDelivery(harness, customer, driver, vehicleTypeId, 'ABA_KHQR');
 
       const summary = await http(harness)
         .get(`${API}/mobile/driver/earnings/summary?period=today`)
@@ -147,7 +148,7 @@ describe('Wallet, earnings and withdrawals (e2e)', () => {
     });
 
     it('shows the split on an individual earning', async () => {
-      const delivery = await completedDelivery(harness, customer, driver, vehicleTypeId);
+      const delivery = await completedDelivery(harness, customer, driver, vehicleTypeId, 'ABA_KHQR');
 
       const history = await http(harness)
         .get(`${API}/mobile/driver/earnings/history`)
@@ -167,7 +168,7 @@ describe('Wallet, earnings and withdrawals (e2e)', () => {
     });
 
     it('will not show one driver another driver’s earnings', async () => {
-      await completedDelivery(harness, customer, driver, vehicleTypeId);
+      await completedDelivery(harness, customer, driver, vehicleTypeId, 'ABA_KHQR');
       const other = await readyDriver(harness, NEARBY);
 
       const history = await http(harness)
@@ -181,8 +182,8 @@ describe('Wallet, earnings and withdrawals (e2e)', () => {
 
   describe('the ledger', () => {
     it('keeps balanceBefore and balanceAfter consistent across every entry', async () => {
-      await completedDelivery(harness, customer, driver, vehicleTypeId);
-      await completedDelivery(harness, customer, driver, vehicleTypeId);
+      await completedDelivery(harness, customer, driver, vehicleTypeId, 'ABA_KHQR');
+      await completedDelivery(harness, customer, driver, vehicleTypeId, 'ABA_KHQR');
       await topUp(50_000);
 
       const entries = await harness.prisma.walletTransaction.findMany({
@@ -205,18 +206,47 @@ describe('Wallet, earnings and withdrawals (e2e)', () => {
       expect(balances.balance).toBe(running);
     });
 
-    it('never lets the balance go negative', async () => {
+    it('never lets a reservation exceed what is actually there', async () => {
+      // The balance itself may go negative — a driver paid in cash owes the
+      // platform its commission — but nothing can be promised out of an
+      // overdraft, which is what stops a debt funding a withdrawal.
       const constraint = await harness.prisma.$queryRaw<{ count: bigint }[]>`
-        SELECT count(*) FROM pg_constraint WHERE conname = 'Wallet_balance_non_negative'
+        SELECT count(*) FROM pg_constraint WHERE conname = 'Wallet_reserved_within_positive_balance'
       `;
       expect(Number(constraint[0].count)).toBe(1);
 
       const current = await harness.prisma.wallet.findFirst({ where: { userId: driver.userId } });
       if (current) {
         await expect(
-          harness.prisma.wallet.update({ where: { id: current.id }, data: { balance: -1 } }),
+          harness.prisma.wallet.update({
+            where: { id: current.id },
+            data: { balance: -1, reservedBalance: 1 },
+          }),
         ).rejects.toThrow();
       }
+    });
+
+    it('refuses to overdraw on a withdrawal, however the balance got there', async () => {
+      await topUp(10_000);
+      const current = await harness.prisma.wallet.findFirstOrThrow({ where: { userId: driver.userId } });
+
+      await expect(
+        harness.prisma.$transaction((tx) =>
+          harness.app
+            .get(WalletService)
+            .debit(
+              {
+                userId: driver.userId,
+                currency: 'KHR',
+                type: 'WITHDRAWAL',
+                amount: current.balance + 1,
+                referenceType: 'test-overdraw',
+                referenceId: `overdraw-${Date.now()}`,
+              },
+              tx,
+            ),
+        ),
+      ).rejects.toMatchObject({ code: 'INSUFFICIENT_BALANCE' });
     });
   });
 

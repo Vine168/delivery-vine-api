@@ -21,8 +21,18 @@ export class WalletDto {
   @ApiProperty({ example: 40_000, description: 'Committed to a pending withdrawal.' })
   reservedBalance: number;
 
-  @ApiProperty({ example: 108_000, description: 'Balance minus reserved — what can be withdrawn now.' })
+  @ApiProperty({
+    example: 108_000,
+    description: 'Balance minus reserved — what can be withdrawn now. Never negative.',
+  })
   availableBalance: number;
+
+  @ApiProperty({
+    example: 0,
+    description:
+      'What you owe the platform, if anything. Cash deliveries hand you the whole fare at the door, so the platform’s commission is charged to your account and shows here until you hand it in.',
+  })
+  amountOwed: number;
 
   @ApiProperty()
   updatedAt: string;

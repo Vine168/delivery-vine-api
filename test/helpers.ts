@@ -147,7 +147,14 @@ export async function completedDelivery(
   customer: ActivatedAccount,
   driver: ActivatedAccount,
   vehicleTypeId: string,
-): Promise<{ deliveryId: string; bookingCode: string; netAmount: number }> {
+  paymentMethod: 'CASH_ON_DELIVERY' | 'ABA_KHQR' = 'CASH_ON_DELIVERY',
+): Promise<{
+  deliveryId: string;
+  bookingCode: string;
+  netAmount: number;
+  commissionAmount: number;
+  totalAmount: number;
+}> {
   const asCustomer = { Authorization: `Bearer ${customer.accessToken}` };
   const asDriver = { Authorization: `Bearer ${driver.accessToken}` };
 
@@ -172,7 +179,7 @@ export async function completedDelivery(
       vehicleTypeId,
       currency: 'KHR',
       packages: [{ size: 'SMALL', weightKg: 2 }],
-      paymentMethod: 'CASH_ON_DELIVERY',
+      paymentMethod,
     })
     .expect(201);
 
@@ -206,6 +213,8 @@ export async function completedDelivery(
     deliveryId,
     bookingCode: booking.body.data.bookingCode as string,
     netAmount: earning.netAmount,
+    commissionAmount: earning.commissionAmount,
+    totalAmount: earning.deliveryAmount,
   };
 }
 

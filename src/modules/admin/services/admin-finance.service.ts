@@ -21,6 +21,7 @@ import { WalletService } from '../../wallets/wallet.service.js';
 import { WithdrawalsService } from '../../withdrawals/withdrawals.service.js';
 import { AuditService } from '../audit.service.js';
 import type {
+  AdminDriverBalanceDto,
   AdminEarningQueryDto,
   AdminEarningRowDto,
   AdminFinanceOverviewDto,
@@ -29,6 +30,7 @@ import type {
   AdminPaymentQueryDto,
   AdminPaymentRowDto,
   AdminPayoutDetailsDto,
+  AdminRemittanceDto,
   AdminSettleWithdrawalDto,
   AdminWalletAdjustmentDto,
   AdminWalletTransactionDto,
@@ -122,10 +124,7 @@ export class AdminFinanceService {
       }),
       // Liabilities are a position, not a flow: what is owed right now,
       // regardless of the reporting window.
-      this.prisma.wallet.groupBy({
-        by: ['currency'],
-        _sum: { balance: true, reservedBalance: true },
-      }),
+      this.walletPositions(),
       this.prisma.driverEarning.groupBy({
         by: ['currency'],
         where: { status: EarningStatus.PENDING },
@@ -164,12 +163,13 @@ export class AdminFinanceService {
 
     const liabilities: AdminLiabilityLineDto[] = [...currencies].map((currency) => {
       const wallet = wallets.find((row) => row.currency === currency);
-      const balance = wallet?._sum.balance ?? 0;
-      const reserved = wallet?._sum.reservedBalance ?? 0;
+      const balance = wallet?.owedToDrivers ?? 0;
+      const reserved = wallet?.reserved ?? 0;
 
       return {
         currency,
         walletBalance: balance,
+        owedByDrivers: wallet?.owedByDrivers ?? 0,
         reservedBalance: reserved,
         availableBalance: balance - reserved,
         pendingEarnings:
@@ -697,7 +697,105 @@ export class AdminFinanceService {
     return { ...written, createdAt: written.createdAt.toISOString() };
   }
 
+  /**
+   * Records cash a driver has handed in.
+   *
+   * The counterpart to charging commission on a cash delivery: that leaves the
+   * driver's account overdrawn because they are holding money that is not
+   * theirs, and this is how the money comes back. A credit through the same
+   * ledger as everything else, so the statement continues to explain the
+   * balance line by line.
+   *
+   * Deliberately not netted against anything or auto-applied to specific
+   * deliveries — the driver hands over an amount, the platform records that
+   * amount, and the account moves by exactly it.
+   */
+  async recordRemittance(
+    actorUserId: string,
+    driverId: string,
+    dto: AdminRemittanceDto,
+  ): Promise<AdminDriverBalanceDto> {
+    const driver = await this.loadDriver(driverId);
+    const reference = dto.reference?.trim() || `remittance-${Date.now()}`;
+
+    const entry = await this.prisma.$transaction((tx) =>
+      this.wallets.credit(
+        {
+          userId: driver.userId,
+          currency: dto.currency,
+          type: WalletTransactionType.TOP_UP,
+          amount: dto.amount,
+          referenceType: 'remittance',
+          referenceId: reference,
+          description: dto.note?.trim() || `Cash handed in (${reference})`,
+          metadata: { recordedByUserId: actorUserId, reference },
+        },
+        tx,
+      ),
+    );
+
+    await this.audit.record({
+      actorUserId,
+      action: 'wallet.remittance',
+      entityType: 'Wallet',
+      entityId: entry.walletId,
+      summary: `Recorded ${dto.currency} ${dto.amount} handed in by ${driver.fullName} (${reference})`,
+      before: { balance: entry.balanceBefore },
+      after: { balance: entry.balanceAfter, reference },
+    });
+
+    return this.driverBalance(driver.userId, dto.currency);
+  }
+
+  /** Where a driver stands with the platform in one currency. */
+  async driverBalance(userId: string, currency: Currency): Promise<AdminDriverBalanceDto> {
+    const wallet = await this.prisma.wallet.findUnique({
+      where: { userId_currency: { userId, currency } },
+      select: { balance: true, reservedBalance: true },
+    });
+
+    const position = wallet ?? { balance: 0, reservedBalance: 0 };
+
+    return {
+      currency,
+      balance: position.balance,
+      reservedBalance: position.reservedBalance,
+      availableBalance: this.wallets.availableOf(position),
+      amountOwed: this.wallets.owedOf(position),
+    };
+  }
+
   // ── Internals ──────────────────────────────────────────────────────────
+
+  /**
+   * What the platform owes drivers and what drivers owe the platform.
+   *
+   * Summed in opposite directions rather than netted: a wallet in credit is a
+   * liability and an overdrawn one is a receivable, and a single total would
+   * hide both behind whichever happened to be larger.
+   */
+  private async walletPositions(): Promise<
+    { currency: Currency; owedToDrivers: number; owedByDrivers: number; reserved: number }[]
+  > {
+    const rows = await this.prisma.$queryRaw<
+      { currency: Currency; owed_to_drivers: bigint; owed_by_drivers: bigint; reserved: bigint }[]
+    >`
+      SELECT
+        "currency",
+        SUM(GREATEST("balance", 0))::bigint  AS owed_to_drivers,
+        SUM(GREATEST(-"balance", 0))::bigint AS owed_by_drivers,
+        SUM("reservedBalance")::bigint       AS reserved
+      FROM "Wallet"
+      GROUP BY "currency"
+    `;
+
+    return rows.map((row) => ({
+      currency: row.currency,
+      owedToDrivers: Number(row.owed_to_drivers),
+      owedByDrivers: Number(row.owed_by_drivers),
+      reserved: Number(row.reserved),
+    }));
+  }
 
   private async loadDriver(driverId: string) {
     const driver = await this.prisma.driverProfile.findFirst({

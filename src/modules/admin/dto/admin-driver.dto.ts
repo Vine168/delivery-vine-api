@@ -212,8 +212,15 @@ export class AdminWalletBalanceDto {
   @ApiProperty({ example: 20_000, description: 'Held against withdrawals in flight.' })
   reservedBalance: number;
 
-  @ApiProperty({ example: 108_500 })
+  @ApiProperty({ example: 108_500, description: 'Withdrawable now. Never negative.' })
   availableBalance: number;
+
+  @ApiProperty({
+    example: 0,
+    description:
+      'Owed to the platform, as a positive number. A driver paid in cash holds the commission until they hand it in.',
+  })
+  amountOwed: number;
 }
 
 export class AdminDriverRowDto {

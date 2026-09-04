@@ -324,9 +324,11 @@ describe('Delivery execution (e2e)', () => {
       expect(earning.commissionAmount).toBe(delivery.commissionAmount);
       expect(earning.netAmount).toBe(delivery.driverEarningAmount);
       expect(earning.currency).toBe(delivery.currency);
-      // Settled into the wallet as part of completing, and linked to the
-      // ledger entry that paid it.
-      expect(earning.status).toBe('AVAILABLE');
+      // A cash booking: the driver was handed the fare at the door, so the
+      // earning is already PAID and the ledger entry is the commission charged
+      // back to them rather than a credit.
+      expect(earning.status).toBe('PAID');
+      expect(earning.cashCollectedAmount).toBe(delivery.totalAmount);
       expect(earning.walletTransactionId).toBeTruthy();
 
       // Changing today's rules cannot rewrite yesterday's pay.

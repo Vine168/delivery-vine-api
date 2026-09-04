@@ -182,6 +182,53 @@ export class AdminWalletAdjustmentDto {
   reason: string;
 }
 
+export class AdminRemittanceDto {
+  @ApiProperty({ enum: Currency })
+  @IsEnum(Currency)
+  currency: Currency;
+
+  @ApiProperty({
+    example: 30_000,
+    description: 'Minor units of cash actually handed in. Must be positive.',
+  })
+  @Type(() => Number)
+  @IsInt()
+  @IsPositive()
+  amount: number;
+
+  @ApiPropertyOptional({
+    example: 'RCPT-20260904-0031',
+    description: 'Receipt or reference for the hand-in, so it can be matched to a cash book later.',
+  })
+  @IsString()
+  @MaxLength(120)
+  @IsOptional()
+  reference?: string;
+
+  @ApiPropertyOptional({ example: 'Handed in at the Toul Kork hub' })
+  @IsString()
+  @MaxLength(500)
+  @IsOptional()
+  note?: string;
+}
+
+export class AdminDriverBalanceDto {
+  @ApiProperty({ enum: Currency })
+  currency: Currency;
+
+  @ApiProperty({ example: -28_140, description: 'Negative when the driver owes the platform.' })
+  balance: number;
+
+  @ApiProperty({ example: 0 })
+  reservedBalance: number;
+
+  @ApiProperty({ example: 0, description: 'Withdrawable now. Never negative.' })
+  availableBalance: number;
+
+  @ApiProperty({ example: 28_140, description: 'Owed to the platform, as a positive number.' })
+  amountOwed: number;
+}
+
 export class AdminWalletTransactionQueryDto extends PageQueryDto {
   @ApiPropertyOptional({ enum: Currency })
   @IsEnum(Currency)
@@ -222,9 +269,17 @@ export class AdminLiabilityLineDto {
 
   @ApiProperty({
     example: 842_000,
-    description: 'Sitting in driver wallets — money the platform owes and has not paid out.',
+    description:
+      'Sitting in driver wallets — money the platform owes and has not paid out. Overdrawn wallets are not netted off here; they are reported separately as `owedByDrivers`, because one is a liability and the other is a receivable.',
   })
   walletBalance: number;
+
+  @ApiProperty({
+    example: 128_400,
+    description:
+      'Owed to the platform by drivers who were paid in cash and have not handed the commission in yet.',
+  })
+  owedByDrivers: number;
 
   @ApiProperty({ example: 120_000, description: 'Of that, already committed to withdrawals in flight.' })
   reservedBalance: number;

@@ -29,6 +29,7 @@ import { QUEUE } from '../common/constants/queues.js';
       { name: QUEUE.DELIVERY_MATCHING },
       { name: QUEUE.DELIVERY_TIMEOUT },
       { name: QUEUE.NOTIFICATION },
+      { name: QUEUE.MAINTENANCE },
     ),
   ],
   exports: [BullModule],

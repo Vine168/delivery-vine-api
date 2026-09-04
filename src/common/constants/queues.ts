@@ -20,6 +20,7 @@ export const JOB = {
   POLL_PAYMENT_STATUS: 'poll-payment-status',
   EXPIRE_PAYMENT: 'expire-payment',
   // maintenance
+  RECONCILE_EARNINGS: 'reconcile-earnings',
   PRUNE_TRACK_POINTS: 'prune-track-points',
   PRUNE_IDEMPOTENCY_KEYS: 'prune-idempotency-keys',
   PRUNE_OTP_RECORDS: 'prune-otp-records',

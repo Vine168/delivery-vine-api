@@ -232,6 +232,13 @@ export class DeliveryExecutionService {
           commissionPercentBp: delivery.commissionPercentBp,
           commissionAmount: delivery.commissionAmount,
           netAmount: delivery.driverEarningAmount,
+          // On a cash booking the driver has just been handed the whole fare,
+          // so settlement charges them the platform's share rather than
+          // crediting them theirs. Snapshotted rather than re-derived from the
+          // delivery, because how a job was settled must stay true even if the
+          // booking is edited later.
+          cashCollectedAmount:
+            delivery.paymentMethod === PaymentMethod.CASH_ON_DELIVERY ? delivery.totalAmount : 0,
           status: EarningStatus.PENDING,
           earnedAt: now,
         },

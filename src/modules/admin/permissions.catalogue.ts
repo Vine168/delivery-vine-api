@@ -46,6 +46,12 @@ export const PERMISSION_CATALOGUE: PermissionDefinition[] = [
   { code: 'finance.view', module: 'Finance', action: 'View', description: 'View revenue, earnings and payouts' },
   { code: 'finance.withdrawals.review', module: 'Finance', action: 'Approve', description: 'Approve or reject a withdrawal request' },
   { code: 'finance.withdrawals.settle', module: 'Finance', action: 'Settle', description: 'Record a payout as sent, failed or completed' },
+  {
+    code: 'finance.remittance',
+    module: 'Finance',
+    action: 'Record cash',
+    description: 'Record cash handed in by a driver against what they owe',
+  },
   { code: 'finance.adjust', module: 'Finance', action: 'Adjust', description: 'Credit or debit a driver wallet manually' },
   { code: 'finance.export', module: 'Finance', action: 'Export', description: 'Export financial records' },
 
@@ -126,6 +132,7 @@ export const SYSTEM_ROLES: { name: string; slug: string; description: string; pe
       'finance.view',
       'finance.withdrawals.review',
       'finance.withdrawals.settle',
+      'finance.remittance',
       'finance.export',
       'pricing.view',
       'pricing.manage',

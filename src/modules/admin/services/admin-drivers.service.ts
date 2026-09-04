@@ -21,6 +21,7 @@ import { DriverReadinessService } from '../../drivers/driver-readiness.service.j
 import { NotificationsService } from '../../notifications/notifications.service.js';
 import { FileUrlService } from '../../uploads/file-url.service.js';
 import { UsersService } from '../../users/users.service.js';
+import { WalletService } from '../../wallets/wallet.service.js';
 import { AuditService } from '../audit.service.js';
 import type {
   AdminAssignZonesDto,
@@ -80,6 +81,7 @@ export class AdminDriversService {
     private readonly readiness: DriverReadinessService,
     private readonly notifications: NotificationsService,
     private readonly fileUrls: FileUrlService,
+    private readonly wallets: WalletService,
     private readonly users: UsersService,
     private readonly tokens: TokenService,
     private readonly audit: AuditService,
@@ -208,7 +210,10 @@ export class AdminDriversService {
         currency: wallet.currency,
         balance: wallet.balance,
         reservedBalance: wallet.reservedBalance,
-        availableBalance: wallet.balance - wallet.reservedBalance,
+        // Through the wallet service, so the back office and the driver app
+        // agree on what is spendable and what is owed.
+        availableBalance: this.wallets.availableOf(wallet),
+        amountOwed: this.wallets.owedOf(wallet),
       })),
       lastLatitude: fix?.latitude ?? null,
       lastLongitude: fix?.longitude ?? null,

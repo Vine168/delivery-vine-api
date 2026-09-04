@@ -1154,6 +1154,11 @@ model PaymentTransaction {
 
 /// Balance is a cached projection of the ledger. It only ever changes inside a
 /// transaction that also writes a WalletTransaction.
+///
+/// It may be negative. A driver paid in cash is holding the platform's
+/// commission, so their account with the platform is overdrawn until they
+/// remit it — the sign is the whole point, and `availableBalance` is clamped
+/// at zero so an overdrawn wallet can never fund a withdrawal.
 model Wallet {
   id              String   @id @default(cuid(2))
   userId          String
@@ -1209,6 +1214,12 @@ model DriverEarning {
   tipAmount           Int           @default(0)
   bonusAmount         Int           @default(0)
   netAmount           Int
+  /// Platform money the driver took in cash at the door — the delivery fee on
+  /// a cash booking, zero on a prepaid one. It decides which way the ledger
+  /// moves when this earning settles: a prepaid job credits the driver their
+  /// share, a cash job charges them the platform's, because they are already
+  /// holding the whole fare.
+  cashCollectedAmount Int           @default(0)
   status              EarningStatus @default(PENDING)
   walletTransactionId String?
   earnedAt            DateTime      @default(now()) @db.Timestamptz(3)

@@ -42,13 +42,25 @@ export class EarningsService {
   ) {}
 
   /**
-   * Pays a completed delivery into the driver's wallet.
+   * Settles a completed delivery against the driver's wallet.
+   *
+   * Which way the money moves depends on who is already holding it:
+   *
+   *  - **Prepaid** — the platform took the fare, so the driver is credited
+   *    their share.
+   *  - **Cash** — the driver took the whole fare at the door, commission
+   *    included, so they are charged the platform's share instead. Their
+   *    account goes negative until they remit, which is the correct
+   *    description of the position: they are holding money that is not theirs.
+   *
+   * Crediting a cash job, as this once did, hands the driver their share of a
+   * fare they already have and writes the platform's commission off entirely.
    *
    * The earning snapshot already exists — it was written when the delivery was
-   * completed. This turns it into money, in one transaction that both credits
-   * the ledger and marks the earning settled, so the two can never disagree.
+   * completed — and this turns it into a ledger movement in one transaction
+   * that also marks the earning settled, so the two can never disagree.
    * Re-running it is safe: the ledger's uniqueness constraint makes a repeat
-   * a no-op rather than a second payment.
+   * a no-op rather than a second movement.
    */
   async settle(deliveryId: string): Promise<void> {
     const earning = await this.prisma.driverEarning.findUnique({
@@ -58,6 +70,8 @@ export class EarningsService {
         driverId: true,
         currency: true,
         netAmount: true,
+        commissionAmount: true,
+        cashCollectedAmount: true,
         status: true,
         driver: { select: { userId: true } },
         delivery: { select: { bookingCode: true } },
@@ -73,43 +87,70 @@ export class EarningsService {
       return;
     }
 
-    if (earning.netAmount <= 0) {
-      // Nothing to pay, but the earning should not sit PENDING forever.
+    const paidInCash = earning.cashCollectedAmount > 0;
+    // Cash jobs are settled the moment the driver is handed the fare, so the
+    // earning is already PAID; a prepaid one lands in the wallet, where it
+    // becomes AVAILABLE to withdraw.
+    const settledStatus = paidInCash ? EarningStatus.PAID : EarningStatus.AVAILABLE;
+    const amount = paidInCash ? earning.commissionAmount : earning.netAmount;
+
+    if (amount <= 0) {
+      // Nothing to move — a free delivery, or one with no commission — but the
+      // earning should not sit PENDING forever.
       await this.prisma.driverEarning.update({
         where: { id: earning.id },
-        data: { status: EarningStatus.AVAILABLE },
+        data: { status: settledStatus },
       });
       return;
     }
 
     try {
       await this.prisma.$transaction(async (tx) => {
-        const entry = await this.wallets.credit(
-          {
-            userId: earning.driver.userId,
-            currency: earning.currency,
-            type: WalletTransactionType.DELIVERY_EARNING,
-            amount: earning.netAmount,
-            referenceType: 'delivery',
-            referenceId: deliveryId,
-            description: `Delivery ${earning.delivery.bookingCode}`,
-          },
-          tx,
-        );
+        const input = {
+          userId: earning.driver.userId,
+          currency: earning.currency,
+          referenceType: 'delivery',
+          referenceId: deliveryId,
+        };
+
+        const entry = paidInCash
+          ? await this.wallets.charge(
+              {
+                ...input,
+                type: WalletTransactionType.COMMISSION,
+                amount,
+                description: `Commission on ${earning.delivery.bookingCode} (collected in cash)`,
+              },
+              tx,
+            )
+          : await this.wallets.credit(
+              {
+                ...input,
+                type: WalletTransactionType.DELIVERY_EARNING,
+                amount,
+                description: `Delivery ${earning.delivery.bookingCode}`,
+              },
+              tx,
+            );
 
         await tx.driverEarning.update({
           where: { id: earning.id },
-          data: { status: EarningStatus.AVAILABLE, walletTransactionId: entry.transactionId },
+          data: { status: settledStatus, walletTransactionId: entry.transactionId },
         });
       });
 
-      this.logger.log(`Credited ${earning.netAmount} ${earning.currency} for ${earning.delivery.bookingCode}`);
+      this.logger.log(
+        paidInCash
+          ? `Charged ${amount} ${earning.currency} commission on ${earning.delivery.bookingCode} (cash)`
+          : `Credited ${amount} ${earning.currency} for ${earning.delivery.bookingCode}`,
+      );
     } catch (error) {
       if (error instanceof DuplicateLedgerEntryError) {
-        // Already paid on a previous attempt — reconcile the earning and move on.
+        // Already settled on a previous attempt — reconcile the earning and
+        // move on.
         await this.prisma.driverEarning.updateMany({
           where: { id: earning.id, status: EarningStatus.PENDING },
-          data: { status: EarningStatus.AVAILABLE },
+          data: { status: settledStatus },
         });
         return;
       }

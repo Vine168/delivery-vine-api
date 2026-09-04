@@ -59,8 +59,8 @@ describe('Back office — finance (e2e)', () => {
    * requests a withdrawal.
    */
   async function requestPayout(amount = 20_000): Promise<{ id: string; amount: number }> {
-    await completedDelivery(harness, customer, driver, vehicleTypeId);
-    await completedDelivery(harness, customer, driver, vehicleTypeId);
+    await completedDelivery(harness, customer, driver, vehicleTypeId, 'ABA_KHQR');
+    await completedDelivery(harness, customer, driver, vehicleTypeId, 'ABA_KHQR');
 
     await http(harness)
       .put(`${API}/mobile/driver/withdrawal-settings`)
@@ -104,7 +104,7 @@ describe('Back office — finance (e2e)', () => {
 
   describe('GET /admin/finance/overview', () => {
     it('separates revenue in the window from what the platform owes right now', async () => {
-      const delivery = await completedDelivery(harness, customer, driver, vehicleTypeId);
+      const delivery = await completedDelivery(harness, customer, driver, vehicleTypeId, 'ABA_KHQR');
 
       const response = await http(harness)
         .get(`${API}/admin/finance/overview`)
@@ -160,7 +160,7 @@ describe('Back office — finance (e2e)', () => {
     });
 
     it('reports online payments split by method and outcome', async () => {
-      const delivery = await completedDelivery(harness, customer, driver, vehicleTypeId);
+      const delivery = await completedDelivery(harness, customer, driver, vehicleTypeId, 'ABA_KHQR');
       await onlinePayment(delivery.deliveryId, 15_800);
 
       const response = await http(harness)
@@ -430,7 +430,7 @@ describe('Back office — finance (e2e)', () => {
 
   describe('earnings and payments', () => {
     it('shows the commission rate that was applied at the time', async () => {
-      const delivery = await completedDelivery(harness, customer, driver, vehicleTypeId);
+      const delivery = await completedDelivery(harness, customer, driver, vehicleTypeId, 'ABA_KHQR');
 
       const response = await http(harness).get(`${API}/admin/finance/earnings`).set(asAdmin()).expect(200);
 
@@ -446,7 +446,7 @@ describe('Back office — finance (e2e)', () => {
     });
 
     it('finds a payment by booking code and by provider reference', async () => {
-      const delivery = await completedDelivery(harness, customer, driver, vehicleTypeId);
+      const delivery = await completedDelivery(harness, customer, driver, vehicleTypeId, 'ABA_KHQR');
       await onlinePayment(delivery.deliveryId, 15_800);
 
       const byCode = await http(harness)
@@ -576,7 +576,7 @@ describe('Back office — finance (e2e)', () => {
 
   describe('GET /admin/finance/drivers/:id/wallet', () => {
     it('returns the statement behind the balance', async () => {
-      const delivery = await completedDelivery(harness, customer, driver, vehicleTypeId);
+      const delivery = await completedDelivery(harness, customer, driver, vehicleTypeId, 'ABA_KHQR');
 
       const response = await http(harness)
         .get(`${API}/admin/finance/drivers/${driver.driverId}/wallet`)

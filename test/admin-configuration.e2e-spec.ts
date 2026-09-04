@@ -134,7 +134,7 @@ describe('Back office — pricing, zones, promos and settings (e2e)', () => {
     it('changes what the next booking costs, and nothing already priced', async () => {
       const customer = await activate(harness);
       const driver = await readyDriver(harness, NEARBY);
-      const before = await completedDelivery(harness, customer, driver, vehicleTypeId);
+      const before = await completedDelivery(harness, customer, driver, vehicleTypeId, 'ABA_KHQR');
       const priced = await harness.prisma.delivery.findUniqueOrThrow({
         where: { id: before.deliveryId },
       });
@@ -566,7 +566,7 @@ describe('Back office — pricing, zones, promos and settings (e2e)', () => {
     it('changes the payout minimum a driver is held to', async () => {
       const customer = await activate(harness);
       const driver = await readyDriver(harness, NEARBY);
-      const delivery = await completedDelivery(harness, customer, driver, vehicleTypeId);
+      const delivery = await completedDelivery(harness, customer, driver, vehicleTypeId, 'ABA_KHQR');
 
       await http(harness)
         .put(`${API}/mobile/driver/withdrawal-settings`)

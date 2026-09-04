@@ -13,6 +13,7 @@ import { IdParamDto } from '../../../common/dto/id-param.dto.js';
 import type { PaginatedResult } from '../../../common/interfaces/paginated.interface.js';
 import { AdminReasonDto } from '../dto/admin-driver.dto.js';
 import {
+  AdminDriverBalanceDto,
   AdminEarningQueryDto,
   AdminEarningRowDto,
   AdminFinanceOverviewDto,
@@ -20,6 +21,7 @@ import {
   AdminPaymentQueryDto,
   AdminPaymentRowDto,
   AdminPayoutDetailsDto,
+  AdminRemittanceDto,
   AdminSettleWithdrawalDto,
   AdminWalletAdjustmentDto,
   AdminWalletTransactionDto,
@@ -251,6 +253,32 @@ export class AdminFinanceController {
     @Query() query: AdminWalletTransactionQueryDto,
   ): Promise<PaginatedResult<AdminWalletTransactionDto>> {
     return this.finance.walletTransactions(params.id, query);
+  }
+
+  @Post('drivers/:id/remittance')
+  @HttpCode(HttpStatus.CREATED)
+  @RequirePermissions('finance.remittance')
+  @ResponseCodeMeta(ResponseCode.REMITTANCE_RECORDED)
+  @ApiOperation({
+    summary: 'Record cash handed in by a driver',
+    description:
+      'The counterpart to a cash delivery. A driver paid at the door is holding the whole fare, so the platform’s commission is charged to their account and it goes overdrawn; this is how the money comes back. Recorded through the same ledger as everything else, so the driver’s statement still explains their balance line by line. Nothing is netted or auto-applied to particular deliveries — the account moves by exactly the amount handed over.',
+  })
+  @ApiSuccessResponse({
+    status: 201,
+    code: ResponseCode.REMITTANCE_RECORDED,
+    type: AdminDriverBalanceDto,
+  })
+  @ApiErrorResponses(
+    { status: 400, code: ResponseCode.VALIDATION_ERROR },
+    { status: 404, code: ResponseCode.DRIVER_NOT_FOUND },
+  )
+  recordRemittance(
+    @CurrentUser('userId') userId: string,
+    @Param() params: IdParamDto,
+    @Body() dto: AdminRemittanceDto,
+  ): Promise<AdminDriverBalanceDto> {
+    return this.finance.recordRemittance(userId, params.id, dto);
   }
 
   @Post('drivers/:id/wallet/adjust')
