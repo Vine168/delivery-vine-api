@@ -17,7 +17,12 @@ import { QueueModule } from './queue/queue.module.js';
 import { RedisModule } from './redis/redis.module.js';
 import { AddressesModule } from './modules/addresses/addresses.module.js';
 import { AuthModule } from './modules/auth/auth.module.js';
+import { ChatModule } from './modules/chat/chat.module.js';
 import { CustomersModule } from './modules/customers/customers.module.js';
+import { FavoriteDriversModule } from './modules/favorite-drivers/favorite-drivers.module.js';
+import { NotificationsModule } from './modules/notifications/notifications.module.js';
+import { PackageTemplatesModule } from './modules/package-templates/package-templates.module.js';
+import { RatingsModule } from './modules/ratings/ratings.module.js';
 import { DeliveriesModule } from './modules/deliveries/deliveries.module.js';
 import { DeliveryMatchingModule } from './modules/delivery-matching/delivery-matching.module.js';
 import { DriverJobsModule } from './modules/driver-jobs/driver-jobs.module.js';
@@ -67,6 +72,11 @@ import { VehicleTypesModule } from './modules/vehicle-types/vehicle-types.module
     EarningsModule,
     WithdrawalsModule,
     PaymentsModule,
+    RatingsModule,
+    FavoriteDriversModule,
+    PackageTemplatesModule,
+    ChatModule,
+    NotificationsModule,
     RealtimeModule,
     HealthModule,
   ],
