@@ -108,7 +108,11 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @RateLimit({ bucket: 'auth:otp-send', limit: 20, windowSeconds: 3600 })
   @ResponseCodeMeta(ResponseCode.OTP_RESENT)
-  @ApiOperation({ summary: 'Resend the verification code' })
+  @ApiOperation({
+    summary: 'Resend the verification code',
+    description:
+      'Subject to a cooldown between sends and a daily cap per number, so a request that looks correct can still be refused with 429 — surface the wait rather than retrying automatically.',
+  })
   @ApiSuccessResponse({ code: ResponseCode.OTP_RESENT, type: OtpChallengeDto })
   @ApiErrorResponses({ status: 429, code: ResponseCode.OTP_RESEND_TOO_SOON })
   resendOtp(@Body() dto: ResendOtpDto, @Req() request: Request): Promise<OtpChallengeDto> {
@@ -140,7 +144,11 @@ export class AuthController {
   @Post('customer/set-password')
   @HttpCode(HttpStatus.OK)
   @ResponseCodeMeta(ResponseCode.PASSWORD_SET)
-  @ApiOperation({ summary: 'Set the password for a verified customer account and sign in' })
+  @ApiOperation({
+    summary: 'Set the password for a verified customer account and sign in',
+    description:
+      'Takes the single-use verification token from OTP verify and returns a full session, so the app does not have to call login straight afterwards. The token is spent by this call.',
+  })
   @ApiSuccessResponse({ code: ResponseCode.PASSWORD_SET, type: AuthSessionDto })
   @ApiErrorResponses(
     { status: 400, code: ResponseCode.VERIFICATION_TOKEN_INVALID },
@@ -154,7 +162,11 @@ export class AuthController {
   @Post('driver/set-password')
   @HttpCode(HttpStatus.OK)
   @ResponseCodeMeta(ResponseCode.PASSWORD_SET)
-  @ApiOperation({ summary: 'Set the password for a verified driver account and sign in' })
+  @ApiOperation({
+    summary: 'Set the password for a verified driver account and sign in',
+    description:
+      'Takes the single-use verification token from OTP verify and returns a full session. A driver can sign in from here but cannot go online until their documents are approved.',
+  })
   @ApiSuccessResponse({ code: ResponseCode.PASSWORD_SET, type: AuthSessionDto })
   @ApiErrorResponses(
     { status: 400, code: ResponseCode.VERIFICATION_TOKEN_INVALID },
@@ -211,7 +223,11 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @ApiBearerAuth()
   @ResponseCodeMeta(ResponseCode.LOGGED_OUT)
-  @ApiOperation({ summary: 'Sign out of this session, or every session' })
+  @ApiOperation({
+    summary: 'Sign out of this session, or every session',
+    description:
+      'Revokes the refresh token and its family. Access tokens already issued stay valid until they expire — they are short-lived by design — so treat sign-out as ending the ability to refresh, not as an instant kill switch.',
+  })
   @ApiBody({ type: LogoutDto, required: false })
   @ApiSuccessResponse({ code: ResponseCode.LOGGED_OUT })
   @ApiErrorResponses({ status: 401, code: ResponseCode.UNAUTHORIZED })
@@ -231,7 +247,11 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @RateLimit({ bucket: 'auth:forgot', limit: 10, windowSeconds: 3600 })
   @ResponseCodeMeta(ResponseCode.OTP_SENT, 'If the account exists, a reset code has been sent.')
-  @ApiOperation({ summary: 'Request a password reset code' })
+  @ApiOperation({
+    summary: 'Request a password reset code',
+    description:
+      'Answers the same way whether or not the number is registered, so this cannot be used to discover who has an account.',
+  })
   @ApiSuccessResponse({ code: ResponseCode.OTP_SENT, type: OtpChallengeDto })
   @ApiErrorResponses({ status: 429, code: ResponseCode.OTP_RATE_LIMITED })
   forgotPassword(@Body() dto: ForgotPasswordDto, @Req() request: Request): Promise<OtpChallengeDto> {
@@ -243,7 +263,11 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @RateLimit({ bucket: 'auth:otp-verify', limit: 30, windowSeconds: 3600 })
   @ResponseCodeMeta(ResponseCode.OTP_VERIFIED)
-  @ApiOperation({ summary: 'Verify a password reset code' })
+  @ApiOperation({
+    summary: 'Verify a password reset code',
+    description:
+      'Exchanges the code for a single-use token to pass to reset-password. The code itself is never accepted by that endpoint.',
+  })
   @ApiSuccessResponse({ code: ResponseCode.OTP_VERIFIED, type: OtpVerifiedDto })
   @ApiErrorResponses(
     { status: 400, code: ResponseCode.OTP_INVALID },

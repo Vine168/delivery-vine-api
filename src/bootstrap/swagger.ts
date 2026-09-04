@@ -10,7 +10,6 @@ export const SWAGGER_TAGS = [
   ['Locations', 'Place search, reverse geocoding and route estimates.'],
   ['Promotions', 'Promo code validation.'],
   ['Payments', 'Payment methods and delivery payments.'],
-  ['Tracking', 'Live delivery tracking.'],
   ['Rating', 'Rating a completed delivery.'],
   ['Driver Profile', 'The signed-in driver account, vehicle and documents.'],
   ['Driver Availability', 'Going online and offline, and location reporting.'],
@@ -39,7 +38,14 @@ export const SWAGGER_TAGS = [
   ['Admin — Audit log', 'What operators have done.'],
 ] as const;
 
-export function setupSwagger(app: INestApplication, apiPrefix: string): void {
+/**
+ * The OpenAPI document itself.
+ *
+ * Separate from serving it so `npm run swagger:export` can write the spec to
+ * a file — for client generation, a Postman import, or diffing the API
+ * surface in CI — without booting an HTTP listener.
+ */
+export function buildOpenApiDocument(app: INestApplication, apiPrefix: string): OpenAPIObject {
   const builder = new DocumentBuilder()
     .setTitle('Deliver API')
     .setDescription(
@@ -84,9 +90,39 @@ export function setupSwagger(app: INestApplication, apiPrefix: string): void {
 
   const document = SwaggerModule.createDocument(app, builder.build(), {
     extraModels: [ApiSuccessDto, ApiErrorDto, PageMetaDto, CursorMetaDto],
+    operationIdFactory,
   });
 
   addUniversalResponses(document);
+
+  return document;
+}
+
+/**
+ * Names each operation for the clients generated from this document.
+ *
+ * Nest's default is `CustomerDeliveriesController_create_v1`, which a
+ * generator turns into `customerDeliveriesControllerCreateV1()`. Dropping the
+ * noise gives `customerDeliveries_create` and therefore
+ * `customerDeliveriesCreate()` — the mobile teams read these constantly, and
+ * the controller suffix tells them nothing.
+ *
+ * The version is kept only when it is not the default, so today's names stay
+ * short and a future v2 cannot silently collide with its v1.
+ */
+function operationIdFactory(controllerKey: string, methodKey: string, version?: string): string {
+  const controller = controllerKey.replace(/Controller$/, '');
+  const name = `${controller.charAt(0).toLowerCase()}${controller.slice(1)}_${methodKey}`;
+
+  // Nest hands the version through as `v1`, not `1`.
+  const number = version?.replace(/^v/i, '');
+
+  return number && number !== '1' ? `${name}_v${number}` : name;
+}
+
+/** Builds the document and serves it at `/{prefix}/docs`. */
+export function setupSwagger(app: INestApplication, apiPrefix: string): void {
+  const document = buildOpenApiDocument(app, apiPrefix);
 
   SwaggerModule.setup(`${apiPrefix}/docs`, app, document, {
     jsonDocumentUrl: `${apiPrefix}/docs/json`,

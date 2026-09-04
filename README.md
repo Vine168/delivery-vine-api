@@ -55,6 +55,26 @@ createdb deliver_new_test
 npm run db:test:deploy
 ```
 
+## API documentation
+
+Swagger UI is served at `/api/docs`, with the raw document at
+`/api/docs/json`. It is generated from the running code, so it cannot drift
+from the API.
+
+`npm run swagger:export` writes `openapi.json` without starting a server — for
+generating a client, importing into Postman, or diffing the API surface in
+review. The file is committed, so a change to the API shows up in the diff.
+
+Operation ids read as method names (`customerDeliveries_create`), which is what
+a generated client is named after. `test/openapi.e2e-spec.ts` holds the
+document to its promises: every operation has a summary, a declared tag, a
+documented response and — unless deliberately public — a bearer requirement,
+and no tag is declared that nothing uses.
+
+Docs are **off by default in production**, since the document describes every
+endpoint including the back office. Set `SWAGGER_ENABLED=true` there only if
+they are meant to be public.
+
 ## Conventions
 
 **ESM.** Every relative import ends in `.js` (`import { X } from './x.js'`), and
@@ -105,7 +125,7 @@ docs/back-office.md       how the admin API is meant to be used
 ## What is built
 
 Nine phases for the mobile apps, eight for the back office, then a
-correctness pass. 179 endpoints, 3 socket messages, 530 tests.
+correctness pass. 179 endpoints, 3 socket messages, 541 tests.
 
 | Area | Highlights |
 | --- | --- |

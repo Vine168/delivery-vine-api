@@ -63,3 +63,7 @@ report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 .env.test
 .env.*.local
 *.tsbuildinfo
+
+# The OpenAPI document is committed on purpose: regenerate it with
+# `npm run swagger:export` so a change to the API surface shows up in review.
+!openapi.json
