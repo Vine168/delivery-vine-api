@@ -70,8 +70,18 @@ describe('Delivery execution (e2e)', () => {
     return deliveryId;
   }
 
+  /**
+   * The server checks an arrival against where the driver actually is, so
+   * every step reports a plausible position: still at the pickup while
+   * collecting, at the drop-off on arrival there.
+   */
   const step = (deliveryId: string, name: string) =>
     http(harness).post(`${API}/mobile/driver/jobs/${deliveryId}/${name}`).set(asDriver());
+
+  const at = (name: string) =>
+    name === 'arrive-dropoff'
+      ? { latitude: DROPOFF.latitude, longitude: DROPOFF.longitude }
+      : { latitude: PICKUP.latitude, longitude: PICKUP.longitude };
 
   async function attachProof(): Promise<string> {
     const upload = await http(harness)
@@ -88,9 +98,9 @@ describe('Delivery execution (e2e)', () => {
     it('walks a delivery from assignment to delivered', async () => {
       const deliveryId = await accepted();
 
-      await step(deliveryId, 'arrive-pickup').send({ latitude: PICKUP.latitude, longitude: PICKUP.longitude }).expect(200);
-      await step(deliveryId, 'confirm-pickup').send({ note: 'One box' }).expect(200);
-      await step(deliveryId, 'arrive-dropoff').send({}).expect(200);
+      await step(deliveryId, 'arrive-pickup').send(at('arrive-pickup')).expect(200);
+      await step(deliveryId, 'confirm-pickup').send({ ...at('confirm-pickup'), note: 'One box' }).expect(200);
+      await step(deliveryId, 'arrive-dropoff').send(at('arrive-dropoff')).expect(200);
 
       const photoFileId = await attachProof();
       await step(deliveryId, 'proof-of-delivery')
@@ -110,9 +120,9 @@ describe('Delivery execution (e2e)', () => {
     it('records every transition with the actor who made it', async () => {
       const deliveryId = await accepted();
 
-      await step(deliveryId, 'arrive-pickup').send({}).expect(200);
-      await step(deliveryId, 'confirm-pickup').send({}).expect(200);
-      await step(deliveryId, 'arrive-dropoff').send({}).expect(200);
+      await step(deliveryId, 'arrive-pickup').send(at('arrive-pickup')).expect(200);
+      await step(deliveryId, 'confirm-pickup').send(at('confirm-pickup')).expect(200);
+      await step(deliveryId, 'arrive-dropoff').send(at('arrive-dropoff')).expect(200);
       const photoFileId = await attachProof();
       await step(deliveryId, 'proof-of-delivery').send({ photoFileId }).expect(201);
       await step(deliveryId, 'complete').send({}).expect(200);
@@ -138,22 +148,22 @@ describe('Delivery execution (e2e)', () => {
     it('refuses steps taken out of order', async () => {
       const deliveryId = await accepted();
 
-      const early = await step(deliveryId, 'confirm-pickup').send({}).expect(422);
+      const early = await step(deliveryId, 'confirm-pickup').send(at('confirm-pickup')).expect(422);
       expect(early.body.code).toBe('DELIVERY_INVALID_TRANSITION');
 
-      await step(deliveryId, 'arrive-pickup').send({}).expect(200);
-      await step(deliveryId, 'arrive-dropoff').send({}).expect(422);
+      await step(deliveryId, 'arrive-pickup').send(at('arrive-pickup')).expect(200);
+      await step(deliveryId, 'arrive-dropoff').send(at('arrive-dropoff')).expect(422);
 
       // And a step cannot be replayed.
-      await step(deliveryId, 'arrive-pickup').send({}).expect(422);
+      await step(deliveryId, 'arrive-pickup').send(at('arrive-pickup')).expect(422);
     });
 
     it('lets a driver who drove straight there skip IN_TRANSIT', async () => {
       const deliveryId = await accepted();
 
-      await step(deliveryId, 'arrive-pickup').send({}).expect(200);
-      await step(deliveryId, 'confirm-pickup').send({}).expect(200);
-      await step(deliveryId, 'arrive-dropoff').send({}).expect(200);
+      await step(deliveryId, 'arrive-pickup').send(at('arrive-pickup')).expect(200);
+      await step(deliveryId, 'confirm-pickup').send(at('confirm-pickup')).expect(200);
+      await step(deliveryId, 'arrive-dropoff').send(at('arrive-dropoff')).expect(200);
 
       const delivery = await harness.prisma.delivery.findUniqueOrThrow({ where: { id: deliveryId } });
       expect(delivery.status).toBe('ARRIVED_DROPOFF');
@@ -177,8 +187,8 @@ describe('Delivery execution (e2e)', () => {
   describe('in transit', () => {
     it('is set by the location stream, not by a button', async () => {
       const deliveryId = await accepted();
-      await step(deliveryId, 'arrive-pickup').send({}).expect(200);
-      await step(deliveryId, 'confirm-pickup').send({}).expect(200);
+      await step(deliveryId, 'arrive-pickup').send(at('arrive-pickup')).expect(200);
+      await step(deliveryId, 'confirm-pickup').send(at('confirm-pickup')).expect(200);
 
       // Still at the pickup: nothing changes.
       await http(harness)
@@ -208,8 +218,8 @@ describe('Delivery execution (e2e)', () => {
 
     it('writes breadcrumbs only while a delivery is in flight, and only on a throttle', async () => {
       const deliveryId = await accepted();
-      await step(deliveryId, 'arrive-pickup').send({}).expect(200);
-      await step(deliveryId, 'confirm-pickup').send({}).expect(200);
+      await step(deliveryId, 'arrive-pickup').send(at('arrive-pickup')).expect(200);
+      await step(deliveryId, 'confirm-pickup').send(at('confirm-pickup')).expect(200);
 
       const first = await http(harness)
         .put(`${API}/mobile/driver/location`)
@@ -232,9 +242,9 @@ describe('Delivery execution (e2e)', () => {
   describe('proof of delivery', () => {
     it('is required before completing', async () => {
       const deliveryId = await accepted();
-      await step(deliveryId, 'arrive-pickup').send({}).expect(200);
-      await step(deliveryId, 'confirm-pickup').send({}).expect(200);
-      await step(deliveryId, 'arrive-dropoff').send({}).expect(200);
+      await step(deliveryId, 'arrive-pickup').send(at('arrive-pickup')).expect(200);
+      await step(deliveryId, 'confirm-pickup').send(at('confirm-pickup')).expect(200);
+      await step(deliveryId, 'arrive-dropoff').send(at('arrive-dropoff')).expect(200);
 
       const response = await step(deliveryId, 'complete').send({}).expect(422);
       expect(response.body.code).toBe('PROOF_OF_DELIVERY_REQUIRED');
@@ -242,9 +252,9 @@ describe('Delivery execution (e2e)', () => {
 
     it('stores the photo privately and records who received the package', async () => {
       const deliveryId = await accepted();
-      await step(deliveryId, 'arrive-pickup').send({}).expect(200);
-      await step(deliveryId, 'confirm-pickup').send({}).expect(200);
-      await step(deliveryId, 'arrive-dropoff').send({}).expect(200);
+      await step(deliveryId, 'arrive-pickup').send(at('arrive-pickup')).expect(200);
+      await step(deliveryId, 'confirm-pickup').send(at('confirm-pickup')).expect(200);
+      await step(deliveryId, 'arrive-dropoff').send(at('arrive-dropoff')).expect(200);
 
       const photoFileId = await attachProof();
       const response = await step(deliveryId, 'proof-of-delivery')
@@ -260,9 +270,9 @@ describe('Delivery execution (e2e)', () => {
 
     it('lets a blurred photo be retaken', async () => {
       const deliveryId = await accepted();
-      await step(deliveryId, 'arrive-pickup').send({}).expect(200);
-      await step(deliveryId, 'confirm-pickup').send({}).expect(200);
-      await step(deliveryId, 'arrive-dropoff').send({}).expect(200);
+      await step(deliveryId, 'arrive-pickup').send(at('arrive-pickup')).expect(200);
+      await step(deliveryId, 'confirm-pickup').send(at('confirm-pickup')).expect(200);
+      await step(deliveryId, 'arrive-dropoff').send(at('arrive-dropoff')).expect(200);
 
       const first = await attachProof();
       await step(deliveryId, 'proof-of-delivery').send({ photoFileId: first }).expect(201);
@@ -282,9 +292,9 @@ describe('Delivery execution (e2e)', () => {
 
     it('refuses a photo belonging to someone else', async () => {
       const deliveryId = await accepted();
-      await step(deliveryId, 'arrive-pickup').send({}).expect(200);
-      await step(deliveryId, 'confirm-pickup').send({}).expect(200);
-      await step(deliveryId, 'arrive-dropoff').send({}).expect(200);
+      await step(deliveryId, 'arrive-pickup').send(at('arrive-pickup')).expect(200);
+      await step(deliveryId, 'confirm-pickup').send(at('confirm-pickup')).expect(200);
+      await step(deliveryId, 'arrive-dropoff').send(at('arrive-dropoff')).expect(200);
 
       const other = await readyDriver(harness, NEARBY);
       const theirUpload = await http(harness)
@@ -305,9 +315,9 @@ describe('Delivery execution (e2e)', () => {
   describe('completing', () => {
     async function readyToComplete(cod?: { amount: number }): Promise<string> {
       const deliveryId = await accepted(cod);
-      await step(deliveryId, 'arrive-pickup').send({}).expect(200);
-      await step(deliveryId, 'confirm-pickup').send({}).expect(200);
-      await step(deliveryId, 'arrive-dropoff').send({}).expect(200);
+      await step(deliveryId, 'arrive-pickup').send(at('arrive-pickup')).expect(200);
+      await step(deliveryId, 'confirm-pickup').send(at('confirm-pickup')).expect(200);
+      await step(deliveryId, 'arrive-dropoff').send(at('arrive-dropoff')).expect(200);
       const photoFileId = await attachProof();
       await step(deliveryId, 'proof-of-delivery').send({ photoFileId }).expect(201);
       return deliveryId;
@@ -414,8 +424,8 @@ describe('Delivery execution (e2e)', () => {
 
     it('refuses once the package has been collected', async () => {
       const deliveryId = await accepted();
-      await step(deliveryId, 'arrive-pickup').send({}).expect(200);
-      await step(deliveryId, 'confirm-pickup').send({}).expect(200);
+      await step(deliveryId, 'arrive-pickup').send(at('arrive-pickup')).expect(200);
+      await step(deliveryId, 'confirm-pickup').send(at('confirm-pickup')).expect(200);
 
       const response = await step(deliveryId, 'cancel').send({ reason: 'Changed my mind' }).expect(422);
       expect(response.body.message).toContain('support');
@@ -442,8 +452,8 @@ describe('Delivery execution (e2e)', () => {
 
     it('switches the ETA to the drop-off once the package is collected', async () => {
       const deliveryId = await accepted();
-      await step(deliveryId, 'arrive-pickup').send({}).expect(200);
-      await step(deliveryId, 'confirm-pickup').send({}).expect(200);
+      await step(deliveryId, 'arrive-pickup').send(at('arrive-pickup')).expect(200);
+      await step(deliveryId, 'confirm-pickup').send(at('confirm-pickup')).expect(200);
 
       const response = await http(harness)
         .get(`${API}/mobile/customer/deliveries/${deliveryId}/tracking`)
@@ -455,7 +465,7 @@ describe('Delivery execution (e2e)', () => {
 
     it('gives no ETA while the driver is standing at a stop', async () => {
       const deliveryId = await accepted();
-      await step(deliveryId, 'arrive-pickup').send({}).expect(200);
+      await step(deliveryId, 'arrive-pickup').send(at('arrive-pickup')).expect(200);
 
       const response = await http(harness)
         .get(`${API}/mobile/customer/deliveries/${deliveryId}/tracking`)
@@ -467,9 +477,9 @@ describe('Delivery execution (e2e)', () => {
 
     it('stops sharing the driver’s position once delivered, and shows the proof', async () => {
       const deliveryId = await accepted();
-      await step(deliveryId, 'arrive-pickup').send({}).expect(200);
-      await step(deliveryId, 'confirm-pickup').send({}).expect(200);
-      await step(deliveryId, 'arrive-dropoff').send({}).expect(200);
+      await step(deliveryId, 'arrive-pickup').send(at('arrive-pickup')).expect(200);
+      await step(deliveryId, 'confirm-pickup').send(at('confirm-pickup')).expect(200);
+      await step(deliveryId, 'arrive-dropoff').send(at('arrive-dropoff')).expect(200);
       const photoFileId = await attachProof();
       await step(deliveryId, 'proof-of-delivery').send({ photoFileId, recipientName: 'Chan Vuthy' }).expect(201);
       await step(deliveryId, 'complete').send({}).expect(200);

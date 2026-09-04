@@ -105,7 +105,7 @@ docs/back-office.md       how the admin API is meant to be used
 ## What is built
 
 Nine phases for the mobile apps, eight for the back office, then a
-correctness pass. 179 endpoints, 3 socket messages, 517 tests.
+correctness pass. 179 endpoints, 3 socket messages, 530 tests.
 
 | Area | Highlights |
 | --- | --- |
@@ -118,7 +118,7 @@ correctness pass. 179 endpoints, 3 socket messages, 517 tests.
 | Money | Integer minor units, wallet ledger with before/after balances, reservations, ABA PayWay KHQR |
 | Engagement | Ratings, favourite drivers, package templates, chat, notifications |
 | Back office | Permissions and roles, dashboard, delivery support, driver approval, payout settlement, refunds, pricing, notifications, audit log, CSV exports |
-| Correctness | Cash commission charged to the driver rather than given away, idempotent money endpoints, settlement reconciliation, scheduled pruning |
+| Correctness | Cash commission charged to the driver rather than given away, idempotent money endpoints, settlement reconciliation, atomic promo limits, arrival verification, scheduled pruning |
 
 The back office is documented separately in [docs/back-office.md](docs/back-office.md).
 

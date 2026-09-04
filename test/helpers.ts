@@ -188,8 +188,18 @@ export async function completedDelivery(
   await harness.matching.runRound(deliveryId, 1);
   await http(harness).post(`${API}/mobile/driver/jobs/${deliveryId}/accept`).set(asDriver).expect(200);
 
-  for (const step of ['arrive-pickup', 'confirm-pickup', 'arrive-dropoff']) {
-    await http(harness).post(`${API}/mobile/driver/jobs/${deliveryId}/${step}`).set(asDriver).send({}).expect(200);
+  // The server checks that an arrival is claimed from the right place, so the
+  // fixture drives: pickup coordinates for the collection steps, drop-off
+  // coordinates for the delivery one.
+  const PICKUP = { latitude: 11.5564, longitude: 104.9282 };
+  const DROPOFF = { latitude: 11.5, longitude: 104.87 };
+
+  for (const [step, at] of [
+    ['arrive-pickup', PICKUP],
+    ['confirm-pickup', PICKUP],
+    ['arrive-dropoff', DROPOFF],
+  ] as const) {
+    await http(harness).post(`${API}/mobile/driver/jobs/${deliveryId}/${step}`).set(asDriver).send(at).expect(200);
   }
 
   const upload = await http(harness)

@@ -3,6 +3,7 @@ import { ResponseCode } from '../../common/constants/response-codes.js';
 import { AppException } from '../../common/exceptions/app.exception.js';
 import { GeoUtil } from '../../common/utils/geo.util.js';
 import { PrismaService } from '../../database/prisma.service.js';
+import type { Prisma } from '../../generated/prisma/client.js';
 import {
   ActorType,
   AssignmentStatus,
@@ -13,6 +14,8 @@ import {
   PaymentStatus,
 } from '../../generated/prisma/enums.js';
 import { DriverAvailabilityService } from '../driver-presence/driver-availability.service.js';
+import { DriverPresenceService } from '../driver-presence/driver-presence.service.js';
+import { SettingsService } from '../settings/settings.service.js';
 import { FileUrlService } from '../uploads/file-url.service.js';
 import { UploadsService } from '../uploads/uploads.service.js';
 import { DeliveryStateService } from './delivery-state.service.js';
@@ -48,10 +51,16 @@ export class DeliveryExecutionService {
     private readonly uploads: UploadsService,
     private readonly fileUrls: FileUrlService,
     private readonly availability: DriverAvailabilityService,
+    private readonly presence: DriverPresenceService,
+    private readonly settings: SettingsService,
   ) {}
 
   async arriveAtPickup(driverId: string, userId: string, deliveryId: string, dto: ArrivedDto): Promise<void> {
-    await this.assertAssigned(driverId, deliveryId);
+    const delivery = await this.assertAssigned(driverId, deliveryId);
+    const at = await this.verifyArrival(driverId, dto, {
+      latitude: delivery.pickupLatitude,
+      longitude: delivery.pickupLongitude,
+    });
 
     const result = await this.prisma.$transaction((tx) =>
       this.state.transition(tx, {
@@ -60,7 +69,7 @@ export class DeliveryExecutionService {
         actorType: ActorType.DRIVER,
         actorUserId: userId,
         expectedFrom: [DeliveryStatus.DRIVER_ASSIGNED],
-        metadata: this.locationMetadata(dto),
+        metadata: at,
       }),
     );
 
@@ -86,7 +95,11 @@ export class DeliveryExecutionService {
   }
 
   async arriveAtDropoff(driverId: string, userId: string, deliveryId: string, dto: ArrivedDto): Promise<void> {
-    await this.assertAssigned(driverId, deliveryId);
+    const delivery = await this.assertAssigned(driverId, deliveryId);
+    const at = await this.verifyArrival(driverId, dto, {
+      latitude: delivery.dropoffLatitude,
+      longitude: delivery.dropoffLongitude,
+    });
 
     const result = await this.prisma.$transaction((tx) =>
       this.state.transition(tx, {
@@ -96,7 +109,7 @@ export class DeliveryExecutionService {
         actorUserId: userId,
         // A driver who drove straight there never passed through IN_TRANSIT.
         expectedFrom: [DeliveryStatus.PICKED_UP, DeliveryStatus.IN_TRANSIT],
-        metadata: this.locationMetadata(dto),
+        metadata: at,
       }),
     );
 
@@ -391,6 +404,10 @@ export class DeliveryExecutionService {
         codEnabled: true,
         codAmount: true,
         paymentMethod: true,
+        pickupLatitude: true,
+        pickupLongitude: true,
+        dropoffLatitude: true,
+        dropoffLongitude: true,
       },
     });
 
@@ -399,6 +416,54 @@ export class DeliveryExecutionService {
     }
 
     return delivery;
+  }
+
+  /**
+   * Refuses an arrival claimed from somewhere else.
+   *
+   * The state machine enforces the *order* of a delivery but said nothing
+   * about *place*, so a driver could accept a prepaid job and walk it through
+   * every step from home. Both gates are covered by checking the two arrivals:
+   * collecting requires having arrived at the pickup, and completing requires
+   * having arrived at the drop-off.
+   *
+   * The position comes from the request, or failing that from the live
+   * presence stream the driver app is already pushing. When there is neither —
+   * an older app build, a phone with location off — the step is allowed and
+   * recorded as unverified rather than blocked, because refusing an arrival
+   * the server simply cannot check would strand the customer's delivery.
+   *
+   * The radius is deliberately generous and operator-tunable: urban GPS is not
+   * precise, and stranding an honest driver is worse than a wide circle.
+   */
+  private async verifyArrival(
+    driverId: string,
+    dto: StepLocationDto,
+    target: { latitude: number; longitude: number },
+  ): Promise<Prisma.InputJsonValue> {
+    const reported =
+      dto.latitude !== undefined && dto.longitude !== undefined
+        ? { latitude: dto.latitude, longitude: dto.longitude }
+        : await this.presence.getLocation(driverId);
+
+    if (!reported) {
+      return { verified: false, reason: 'no position available' };
+    }
+
+    const at = { latitude: reported.latitude, longitude: reported.longitude };
+    const distanceMeters = Math.round(GeoUtil.haversineMeters(at, target));
+    const radius = await this.settings.getNumber('delivery.arrivalRadiusMeters');
+
+    if (distanceMeters > radius) {
+      throw AppException.unprocessable(
+        ResponseCode.DRIVER_TOO_FAR_AWAY,
+        `You are about ${distanceMeters} m away. Get within ${radius} m of the address to confirm you have arrived.`,
+      );
+    }
+
+    // Recorded on the transition, so a dispute months later can be answered
+    // with where the driver actually was.
+    return { ...at, distanceMeters, verified: true };
   }
 
   private locationMetadata(dto: StepLocationDto) {

@@ -6,6 +6,10 @@ export const deliveryConfig = registerAs('delivery', () => ({
   matchingBatchSize: Number(process.env.MATCHING_BATCH_SIZE ?? 5),
   offerTtlSeconds: Number(process.env.MATCHING_OFFER_TTL_SECONDS ?? 30),
   maxRounds: Number(process.env.MATCHING_MAX_ROUNDS ?? 4),
+  /// How close a driver must be to claim they have arrived. Generous,
+  /// because urban GPS is not precise and stranding an honest driver is
+  /// worse than a wide radius.
+  arrivalRadiusMeters: Number(process.env.DELIVERY_ARRIVAL_RADIUS_METERS ?? 300),
   /// How long a booking may search before the back office calls it stuck.
   stalledAfterMinutes: Number(process.env.DELIVERY_STALLED_AFTER_MINUTES ?? 10),
   /// Turn off to stop bookings dispatching automatically (used by tests, which

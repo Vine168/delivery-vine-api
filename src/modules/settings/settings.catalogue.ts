@@ -85,6 +85,18 @@ export const SETTINGS_CATALOGUE: SettingDefinition[] = [
     unit: 'rounds',
   },
   {
+    key: 'delivery.arrivalRadiusMeters',
+    category: 'Operations',
+    label: 'Arrival radius',
+    description:
+      'How close a driver must be before the server accepts that they have arrived. Widen it if honest drivers are being refused in areas with poor GPS.',
+    kind: 'integer',
+    configPath: 'delivery.arrivalRadiusMeters',
+    min: 50,
+    max: 5_000,
+    unit: 'metres',
+  },
+  {
     key: 'delivery.stalledAfterMinutes',
     category: 'Operations',
     label: 'Stalled after',

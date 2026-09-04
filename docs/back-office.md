@@ -120,7 +120,7 @@ or retired without any historical figure moving. Nothing a delivery references
 is hard-deleted. A promo's redemption count is not editable, and its usage limit
 cannot be set below what has already been redeemed.
 
-**Settings** — a catalogue of nine keys, each naming the environment variable it
+**Settings** — a catalogue of ten keys, each naming the environment variable it
 overrides and each read by something real. A key not in the catalogue cannot be
 written, and values are range-checked, so dispatch cannot be broken by a typo.
 Changes take effect within seconds without a deploy; clearing an override falls
@@ -184,3 +184,5 @@ integer minor units with an explicit currency, offset pagination with
 | `cash-settlement.e2e-spec.ts` | Cash vs prepaid settlement, driver debt, remittance, reconciliation |
 | `refunds.e2e-spec.ts` | Refund obligations, partial refunds, settlement |
 | `idempotency.e2e-spec.ts` | Retries, double taps, key reuse |
+| `promo-limits.e2e-spec.ts` | Promo usage and per-customer limits under concurrency |
+| `arrival-verification.e2e-spec.ts` | Refusing an arrival claimed from somewhere else |

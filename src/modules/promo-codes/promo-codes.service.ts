@@ -6,6 +6,9 @@ import { PrismaService } from '../../database/prisma.service.js';
 import { Currency, DiscountType } from '../../generated/prisma/enums.js';
 import type { PromoValidationDto } from './dto/promo.dto.js';
 
+/** The slice of the client `recordUsage` needs, so it works on a transaction. */
+type PromoUsageClient = Pick<PrismaService, 'promoCodeUsage' | 'promoCode' | '$executeRaw'>;
+
 export interface AppliedPromo {
   promoCodeId: string;
   code: string;
@@ -151,26 +154,68 @@ export class PromoCodesService {
     };
   }
 
-  /** Called inside the booking transaction so a usage cannot be double counted. */
-  recordUsage(
-    tx: Pick<PrismaService, 'promoCodeUsage' | 'promoCode'>,
+  /**
+   * Claims one use of a promo code, inside the booking transaction.
+   *
+   * `validate` checks the limits, but a check is not a claim: two bookings
+   * arriving together both read a code as having uses left, and an
+   * unconditional increment then lets both have it. A "first 100 customers"
+   * offer goes to a hundred and fifty, and a one-per-customer code is used
+   * twice by one person who tapped twice.
+   *
+   * So the claim is the conditional UPDATE below, which is the same shape as
+   * the one that decides which driver wins a job: it only matches while uses
+   * remain, and the loser is told the code is finished. That statement also
+   * takes a row lock held to commit, which is what makes the per-customer
+   * count beneath it trustworthy — a concurrent booking of the same code
+   * cannot be between its own claim and its own count.
+   */
+  async recordUsage(
+    tx: PromoUsageClient,
     input: { promoCodeId: string; customerId: string; deliveryId: string; discountAmount: number; currency: Currency },
-  ) {
-    return Promise.all([
-      tx.promoCodeUsage.create({
-        data: {
-          promoCodeId: input.promoCodeId,
-          customerId: input.customerId,
-          deliveryId: input.deliveryId,
-          discountAmount: input.discountAmount,
-          currency: input.currency,
-        },
-      }),
-      tx.promoCode.update({
-        where: { id: input.promoCodeId },
-        data: { usageCount: { increment: 1 } },
-      }),
-    ]);
+  ): Promise<void> {
+    const claimed = await tx.$executeRaw`
+      UPDATE "PromoCode"
+      SET "usageCount" = "usageCount" + 1, "updatedAt" = now()
+      WHERE "id" = ${input.promoCodeId}
+        AND ("usageLimit" IS NULL OR "usageCount" < "usageLimit")
+    `;
+
+    if (claimed === 0) {
+      throw AppException.unprocessable(
+        ResponseCode.PROMO_USAGE_LIMIT_REACHED,
+        'That promo code has been fully used.',
+      );
+    }
+
+    const promo = await tx.promoCode.findUniqueOrThrow({
+      where: { id: input.promoCodeId },
+      select: { perCustomerLimit: true },
+    });
+
+    if (promo.perCustomerLimit !== null) {
+      // Counted under the lock taken above, so this cannot race either.
+      const used = await tx.promoCodeUsage.count({
+        where: { promoCodeId: input.promoCodeId, customerId: input.customerId },
+      });
+
+      if (used >= promo.perCustomerLimit) {
+        throw AppException.unprocessable(
+          ResponseCode.PROMO_CUSTOMER_LIMIT_REACHED,
+          'You have already used that promo code.',
+        );
+      }
+    }
+
+    await tx.promoCodeUsage.create({
+      data: {
+        promoCodeId: input.promoCodeId,
+        customerId: input.customerId,
+        deliveryId: input.deliveryId,
+        discountAmount: input.discountAmount,
+        currency: input.currency,
+      },
+    });
   }
 
   private discountFor(

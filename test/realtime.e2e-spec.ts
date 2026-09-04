@@ -275,13 +275,22 @@ describe('Realtime (e2e)', () => {
       socket.emit('delivery.subscribe', { deliveryId });
       await waitFor(socket, 'delivery.subscribed');
 
-      for (const [step, event, status] of [
-        ['arrive-pickup', 'delivery.arrived_pickup', 'ARRIVED_PICKUP'],
-        ['confirm-pickup', 'delivery.picked_up', 'PICKED_UP'],
-        ['arrive-dropoff', 'delivery.arrived_dropoff', 'ARRIVED_DROPOFF'],
+      // Positions matter: the server refuses an arrival claimed from
+      // somewhere else, so the driver reports being where they say they are.
+      const PICKUP_AT = { latitude: 11.5564, longitude: 104.9282 };
+      const DROPOFF_AT = { latitude: 11.5, longitude: 104.87 };
+
+      for (const [step, event, status, at] of [
+        ['arrive-pickup', 'delivery.arrived_pickup', 'ARRIVED_PICKUP', PICKUP_AT],
+        ['confirm-pickup', 'delivery.picked_up', 'PICKED_UP', PICKUP_AT],
+        ['arrive-dropoff', 'delivery.arrived_dropoff', 'ARRIVED_DROPOFF', DROPOFF_AT],
       ] as const) {
         const promise = waitFor<{ status: string }>(socket, event);
-        await http(harness).post(`${API}/mobile/driver/jobs/${deliveryId}/${step}`).set(bearer(driver)).send({}).expect(200);
+        await http(harness)
+          .post(`${API}/mobile/driver/jobs/${deliveryId}/${step}`)
+          .set(bearer(driver))
+          .send(at)
+          .expect(200);
         expect((await promise).status).toBe(status);
       }
     });

@@ -222,6 +222,11 @@ export class EnvironmentVariables {
   @toInt()
   @IsInt()
   @IsOptional()
+  DELIVERY_ARRIVAL_RADIUS_METERS = 300;
+
+  @toInt()
+  @IsInt()
+  @IsOptional()
   DELIVERY_STALLED_AFTER_MINUTES = 10;
 
   @toInt()
