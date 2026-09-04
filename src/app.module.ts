@@ -16,6 +16,7 @@ import { PrismaModule } from './database/prisma.module.js';
 import { RealtimeModule } from './gateway/realtime.module.js';
 import { QueueModule } from './queue/queue.module.js';
 import { RedisModule } from './redis/redis.module.js';
+import { SettingsModule } from './modules/settings/settings.module.js';
 import { AddressesModule } from './modules/addresses/addresses.module.js';
 import { AdminAccessModule } from './modules/admin/admin-access.module.js';
 import { AdminModule } from './modules/admin/admin.module.js';
@@ -56,6 +57,7 @@ import { VehicleTypesModule } from './modules/vehicle-types/vehicle-types.module
     PrismaModule,
     RedisModule,
     QueueModule,
+    SettingsModule,
     StorageModule,
     UploadsModule,
     UsersModule,

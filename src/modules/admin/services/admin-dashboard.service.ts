@@ -12,6 +12,7 @@ import {
   WithdrawalStatus,
 } from '../../../generated/prisma/enums.js';
 import { DriverPresenceService } from '../../driver-presence/driver-presence.service.js';
+import { SettingsService } from '../../settings/settings.service.js';
 import type {
   AdminDashboardDto,
   AdminDashboardQueryDto,
@@ -19,8 +20,6 @@ import type {
   AdminTrendPointDto,
 } from '../dto/admin-dashboard.dto.js';
 
-/** A delivery is "stuck" once it has looked for a driver this long. */
-const STALLED_AFTER_MINUTES = 10;
 const DEFAULT_WINDOW_DAYS = 13;
 
 interface TrendRow {
@@ -48,6 +47,7 @@ export class AdminDashboardService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly presence: DriverPresenceService,
+    private readonly settings: SettingsService,
     config: ConfigService,
   ) {
     this.timezone = config.get<string>('app.timezone', 'Asia/Phnom_Penh');
@@ -67,7 +67,9 @@ export class AdminDashboardService {
       createdAt: { gte: from, lt: toExclusive },
     };
 
-    const stalledSince = new Date(Date.now() - STALLED_AFTER_MINUTES * 60_000);
+    // How long counts as stuck is an operator's judgement, not a constant.
+    const stalledAfterMinutes = await this.settings.getNumber('delivery.stalledAfterMinutes');
+    const stalledSince = new Date(Date.now() - stalledAfterMinutes * 60_000);
 
     const [
       statusGroups,

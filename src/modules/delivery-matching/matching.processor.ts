@@ -45,7 +45,12 @@ export class MatchingProcessor extends WorkerHost {
     if (result.exhausted) return;
 
     if (result.offersMade > 0) {
-      await this.dispatcher.scheduleRoundExpiry(deliveryId, round, this.matching.offerWindowSeconds, search);
+      await this.dispatcher.scheduleRoundExpiry(
+        deliveryId,
+        round,
+        await this.matching.offerWindowSeconds(),
+        search,
+      );
       return;
     }
 
@@ -61,11 +66,16 @@ export class MatchingProcessor extends WorkerHost {
   }
 
   private async advance(deliveryId: string, round: number, search: number): Promise<void> {
-    if (round >= this.matching.roundLimit) {
+    if (round >= (await this.matching.roundLimit())) {
       await this.matching.expireSearch(deliveryId);
       return;
     }
 
-    await this.dispatcher.scheduleNextRound(deliveryId, round + 1, this.matching.offerWindowSeconds, search);
+    await this.dispatcher.scheduleNextRound(
+      deliveryId,
+      round + 1,
+      await this.matching.offerWindowSeconds(),
+      search,
+    );
   }
 }

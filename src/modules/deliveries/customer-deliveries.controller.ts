@@ -47,6 +47,7 @@ export class CustomerDeliveriesController {
   @ApiErrorResponses(
     { status: 400, code: ResponseCode.VALIDATION_ERROR },
     { status: 404, code: ResponseCode.VEHICLE_TYPE_NOT_FOUND },
+    { status: 422, code: ResponseCode.PRICING_RULE_NOT_FOUND, description: 'That vehicle type has no price yet.' },
     { status: 422, code: ResponseCode.DELIVERY_SAME_PICKUP_DROPOFF },
     { status: 422, code: ResponseCode.DELIVERY_DISTANCE_TOO_LONG },
     { status: 422, code: ResponseCode.PROMO_EXPIRED },

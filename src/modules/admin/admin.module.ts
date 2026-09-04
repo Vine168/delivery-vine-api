@@ -12,10 +12,15 @@ import { AdminCustomersController } from './controllers/admin-customers.controll
 import { AdminDeliveriesController } from './controllers/admin-deliveries.controller.js';
 import { AdminDriversController } from './controllers/admin-drivers.controller.js';
 import { AdminFinanceController } from './controllers/admin-finance.controller.js';
+import { AdminPricingController } from './controllers/admin-pricing.controller.js';
+import { AdminPromoCodesController } from './controllers/admin-promo-codes.controller.js';
+import { AdminSettingsController } from './controllers/admin-settings.controller.js';
+import { AdminZonesController } from './controllers/admin-zones.controller.js';
 import { AdminDashboardService } from './services/admin-dashboard.service.js';
 import { AdminCustomersService } from './services/admin-customers.service.js';
 import { AdminDeliveriesService } from './services/admin-deliveries.service.js';
 import { AdminDriversService } from './services/admin-drivers.service.js';
+import { AdminCatalogueService } from './services/admin-catalogue.service.js';
 import { AdminFinanceService } from './services/admin-finance.service.js';
 import { AdminSessionService } from './services/admin-session.service.js';
 
@@ -45,6 +50,10 @@ import { AdminSessionService } from './services/admin-session.service.js';
     AdminDriversController,
     AdminCustomersController,
     AdminFinanceController,
+    AdminPricingController,
+    AdminZonesController,
+    AdminPromoCodesController,
+    AdminSettingsController,
   ],
   providers: [
     AdminSessionService,
@@ -53,6 +62,7 @@ import { AdminSessionService } from './services/admin-session.service.js';
     AdminDriversService,
     AdminCustomersService,
     AdminFinanceService,
+    AdminCatalogueService,
   ],
   exports: [AdminSessionService],
 })

@@ -5,6 +5,7 @@ import { RedisKey } from '../../common/constants/redis-keys.js';
 import { WsEvent } from '../../common/constants/events.js';
 import { PrismaService } from '../../database/prisma.service.js';
 import { RedisService } from '../../redis/redis.service.js';
+import { SettingsService } from '../settings/settings.service.js';
 import {
   ActorType,
   AssignmentStatus,
@@ -47,11 +48,6 @@ export interface RoundResult {
 @Injectable()
 export class DeliveryMatchingService {
   private readonly logger = new Logger(DeliveryMatchingService.name);
-  private readonly baseRadius: number;
-  private readonly maxRadius: number;
-  private readonly batchSize: number;
-  private readonly offerTtlSeconds: number;
-  private readonly maxRounds: number;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -59,22 +55,45 @@ export class DeliveryMatchingService {
     private readonly locations: LocationsService,
     private readonly state: DeliveryStateService,
     private readonly redis: RedisService,
+    private readonly settings: SettingsService,
     private readonly events: EventEmitter2,
-    config: ConfigService,
-  ) {
-    this.baseRadius = config.get<number>('delivery.matchingRadiusMeters', 5_000);
-    this.maxRadius = config.get<number>('delivery.matchingMaxRadiusMeters', 15_000);
-    this.batchSize = config.get<number>('delivery.matchingBatchSize', 5);
-    this.offerTtlSeconds = config.get<number>('delivery.offerTtlSeconds', 30);
-    this.maxRounds = config.get<number>('delivery.maxRounds', 4);
+  ) {}
+
+  /**
+   * The dispatch parameters in force right now.
+   *
+   * Read per round rather than at construction so an operator's change takes
+   * effect on the next booking instead of the next deploy. The settings
+   * service caches in Redis, so this is one cheap read, and it falls back to
+   * the values injected above when nothing is stored.
+   */
+  private async tuning(): Promise<{
+    baseRadius: number;
+    maxRadius: number;
+    batchSize: number;
+    offerTtlSeconds: number;
+  }> {
+    const settings = await this.settings.getNumbers([
+      'matching.radiusMeters',
+      'matching.maxRadiusMeters',
+      'matching.batchSize',
+      'matching.offerTtlSeconds',
+    ] as const);
+
+    return {
+      baseRadius: settings['matching.radiusMeters'],
+      maxRadius: settings['matching.maxRadiusMeters'],
+      batchSize: settings['matching.batchSize'],
+      offerTtlSeconds: settings['matching.offerTtlSeconds'],
+    };
   }
 
-  get roundLimit(): number {
-    return this.maxRounds;
+  async roundLimit(): Promise<number> {
+    return this.settings.getNumber('matching.maxRounds');
   }
 
-  get offerWindowSeconds(): number {
-    return this.offerTtlSeconds;
+  async offerWindowSeconds(): Promise<number> {
+    return this.settings.getNumber('matching.offerTtlSeconds');
   }
 
   /**
@@ -82,7 +101,8 @@ export class DeliveryMatchingService {
    * can decide whether to schedule another.
    */
   async runRound(deliveryId: string, round: number): Promise<RoundResult> {
-    const radiusMeters = Math.min(this.baseRadius * round, this.maxRadius);
+    const tuning = await this.tuning();
+    const radiusMeters = Math.min(tuning.baseRadius * round, tuning.maxRadius);
     const empty = (exhausted: boolean): RoundResult => ({
       round,
       radiusMeters,
@@ -147,8 +167,8 @@ export class DeliveryMatchingService {
         eligible.favouriteDriverIds,
       );
 
-      const chosen = ranked.slice(0, this.batchSize);
-      const expiresAt = new Date(Date.now() + this.offerTtlSeconds * 1000);
+      const chosen = ranked.slice(0, tuning.batchSize);
+      const expiresAt = new Date(Date.now() + tuning.offerTtlSeconds * 1000);
 
       const offers = await this.prisma.$transaction(async (tx) => {
         const created: OfferedJob[] = [];

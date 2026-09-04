@@ -32,6 +32,9 @@ export const RedisKey = {
   // ── Map provider cache ──
   mapPlaceSearch: (query: string) => `map:place:${query}`,
   mapPlaceDetail: (placeId: string) => `map:place-detail:${placeId}`,
+  /** Cached system settings, read on the matching hot path. */
+  systemSettings: 'settings:all',
+
   mapGeocode: (lat: string, lon: string) => `map:geocode:${lat}:${lon}`,
   mapRoute: (hash: string) => `map:route:${hash}`,
 

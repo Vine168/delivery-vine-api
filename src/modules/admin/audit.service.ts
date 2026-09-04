@@ -11,8 +11,9 @@ export interface AuditEntry {
   entityType: string;
   entityId?: string;
   summary?: string;
-  before?: Prisma.InputJsonValue;
-  after?: Prisma.InputJsonValue;
+  /** Plain objects; keys with `undefined` values are dropped rather than stored. */
+  before?: Record<string, unknown>;
+  after?: Record<string, unknown>;
 }
 
 export interface AuditQuery {
@@ -55,8 +56,8 @@ export class AuditService {
           entityType: entry.entityType,
           entityId: entry.entityId,
           summary: entry.summary,
-          before: entry.before,
-          after: entry.after,
+          before: AuditService.toJson(entry.before),
+          after: AuditService.toJson(entry.after),
           ipAddress: context?.ip,
           userAgent: context?.userAgent,
         },
@@ -64,6 +65,18 @@ export class AuditService {
     } catch (error) {
       this.logger.error(`Could not record audit entry ${entry.action}: ${String(error)}`);
     }
+  }
+
+  /**
+   * Callers pass whatever object describes the change, including DTOs with
+   * optional fields. `undefined` is not JSON, so those keys are dropped here
+   * rather than at every call site.
+   */
+  private static toJson(value: Record<string, unknown> | undefined): Prisma.InputJsonValue | undefined {
+    if (!value) return undefined;
+
+    const entries = Object.entries(value).filter(([, item]) => item !== undefined);
+    return Object.fromEntries(entries) as Prisma.InputJsonValue;
   }
 
   async find(query: AuditQuery): Promise<PaginatedResult<AuditLogView>> {

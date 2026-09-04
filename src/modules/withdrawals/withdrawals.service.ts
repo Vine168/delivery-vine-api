@@ -18,6 +18,7 @@ import {
 } from '../../generated/prisma/enums.js';
 import { FileUrlService } from '../uploads/file-url.service.js';
 import { UploadsService } from '../uploads/uploads.service.js';
+import { SettingsService } from '../settings/settings.service.js';
 import { WalletService } from '../wallets/wallet.service.js';
 import type {
   CreateWithdrawalDto,
@@ -75,6 +76,7 @@ export class WithdrawalsService {
     private readonly uploads: UploadsService,
     private readonly fileUrls: FileUrlService,
     private readonly events: EventEmitter2,
+    private readonly settings: SettingsService,
     private readonly config: ConfigService,
   ) {
     this.encryptionKey = this.config.getOrThrow<string>('app.encryptionKey');
@@ -422,9 +424,10 @@ export class WithdrawalsService {
    * the stored exchange rate rather than guessed at.
    */
   private async assertWithinLimits(amount: number, currency: Currency): Promise<void> {
+    const limits = await this.settings.getNumbers(['payout.minAmountKhr', 'payout.maxAmountKhr'] as const);
     const [minimum, maximum] = await Promise.all([
-      this.convertFromKhr(this.config.get<number>('payout.minAmountKhr', 20_000), currency),
-      this.convertFromKhr(this.config.get<number>('payout.maxAmountKhr', 4_000_000), currency),
+      this.convertFromKhr(limits['payout.minAmountKhr'], currency),
+      this.convertFromKhr(limits['payout.maxAmountKhr'], currency),
     ]);
 
     if (amount < minimum) {
@@ -443,7 +446,7 @@ export class WithdrawalsService {
   }
 
   private async feeFor(currency: Currency): Promise<number> {
-    return this.convertFromKhr(this.config.get<number>('payout.feeKhr', 0), currency);
+    return this.convertFromKhr(await this.settings.getNumber('payout.feeKhr'), currency);
   }
 
   private async convertFromKhr(amountKhr: number, currency: Currency): Promise<number> {

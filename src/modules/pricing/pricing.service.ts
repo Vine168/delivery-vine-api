@@ -91,8 +91,11 @@ export class PricingService {
     });
 
     if (!rule) {
-      throw AppException.serviceUnavailable(
-        ResponseCode.SERVICE_UNAVAILABLE,
+      // Not a 503: nothing is down and retrying will never help. This is a
+      // vehicle type nobody has priced yet, which the app should treat as
+      // "you cannot book this", not "try again in a moment".
+      throw AppException.unprocessable(
+        ResponseCode.PRICING_RULE_NOT_FOUND,
         'Pricing is not configured for that vehicle type yet.',
       );
     }
