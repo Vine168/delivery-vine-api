@@ -13,6 +13,26 @@ const RETENTION_DAYS = {
   trackPoints: 60,
   idempotencyKeys: 2,
   otpVerifications: 7,
+  /**
+   * Comfortably past the 30-day refresh token lifetime.
+   *
+   * Deliberately not shorter: reuse detection works by finding a token that
+   * has already been spent, so deleting spent tokens early would turn a replay
+   * attack from "revoke the whole family" into "not found", which is a quieter
+   * and much worse answer.
+   */
+  refreshTokens: 60,
+  sessions: 60,
+  /** Diagnostics for a push attempt; the notification itself is kept. */
+  pushDispatches: 30,
+  /**
+   * How long an uploaded file may stay attached to nothing.
+   *
+   * A file is unreferenced for a few seconds between being uploaded and being
+   * saved onto the booking that uses it, so this has to be long enough that a
+   * slow customer filling in a form is never mistaken for litter.
+   */
+  orphanedFiles: 7,
 } as const;
 
 /** Deleted per run, so one sweep cannot lock a hot table for minutes. */
@@ -45,6 +65,32 @@ export class MaintenanceService {
   /** Used and expired verification codes. The hashes are worthless afterwards. */
   async pruneOtpVerifications(): Promise<number> {
     return this.deleteInBatches('OtpVerification', 'expiresAt', RETENTION_DAYS.otpVerifications);
+  }
+
+  /**
+   * Spent refresh tokens.
+   *
+   * Tokens rotate on every use, so an app refreshing every fifteen minutes
+   * writes some thirty-five thousand rows a year on its own. Nothing has ever
+   * deleted them, and this is the table the login path reads.
+   */
+  async pruneRefreshTokens(): Promise<number> {
+    return this.deleteInBatches('RefreshToken', 'expiresAt', RETENTION_DAYS.refreshTokens);
+  }
+
+  /**
+   * Sessions that ended long ago.
+   *
+   * Only revoked ones: a session with no `revokedAt` is still someone's open
+   * app, however old the row is.
+   */
+  async pruneSessions(): Promise<number> {
+    return this.deleteInBatches('UserSession', 'revokedAt', RETENTION_DAYS.sessions);
+  }
+
+  /** The record of individual push attempts. The notification itself stays. */
+  async prunePushDispatches(): Promise<number> {
+    return this.deleteInBatches('PushDispatch', 'createdAt', RETENTION_DAYS.pushDispatches);
   }
 
   /**

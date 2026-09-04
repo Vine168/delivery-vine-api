@@ -433,25 +433,29 @@ export class AdminDeliveriesService {
       },
     });
 
-    return Promise.all(
-      deliveries.map(async (delivery) => {
-        const fix = delivery.driverId ? await this.presence.getLocation(delivery.driverId) : null;
-
-        return {
-          id: delivery.id,
-          bookingCode: delivery.bookingCode,
-          status: delivery.status,
-          pickupLatitude: delivery.pickupLatitude,
-          pickupLongitude: delivery.pickupLongitude,
-          dropoffLatitude: delivery.dropoffLatitude,
-          dropoffLongitude: delivery.dropoffLongitude,
-          driverName: delivery.driver?.fullName ?? null,
-          driverLatitude: fix?.latitude ?? null,
-          driverLongitude: fix?.longitude ?? null,
-          waitingMinutes: this.waitingMinutes(delivery),
-        };
-      }),
+    // One call for every driver on the map, rather than one call per row on a
+    // screen built to be polled.
+    const fixes = await this.presence.getLocations(
+      deliveries.map((delivery) => delivery.driverId).filter((id): id is string => id !== null),
     );
+
+    return deliveries.map((delivery) => {
+      const fix = delivery.driverId ? (fixes.get(delivery.driverId) ?? null) : null;
+
+      return {
+        id: delivery.id,
+        bookingCode: delivery.bookingCode,
+        status: delivery.status,
+        pickupLatitude: delivery.pickupLatitude,
+        pickupLongitude: delivery.pickupLongitude,
+        dropoffLatitude: delivery.dropoffLatitude,
+        dropoffLongitude: delivery.dropoffLongitude,
+        driverName: delivery.driver?.fullName ?? null,
+        driverLatitude: fix?.latitude ?? null,
+        driverLongitude: fix?.longitude ?? null,
+        waitingMinutes: this.waitingMinutes(delivery),
+      };
+    });
   }
 
   // ── Internals ──────────────────────────────────────────────────────────

@@ -93,6 +93,34 @@ export class DriverPresenceService {
     return this.redis.getJson<DriverFix>(RedisKey.driverLocation(driverId));
   }
 
+  /**
+   * Positions for many drivers in one round trip.
+   *
+   * The operations map asks for every delivery in flight and is designed to be
+   * polled, so fetching these one at a time made a single screen refresh cost
+   * hundreds of sequential calls to Redis.
+   */
+  async getLocations(driverIds: string[]): Promise<Map<string, DriverFix>> {
+    const unique = [...new Set(driverIds)];
+    if (unique.length === 0) return new Map();
+
+    const raw = await this.redis.client.mget(...unique.map((id) => RedisKey.driverLocation(id)));
+    const fixes = new Map<string, DriverFix>();
+
+    unique.forEach((driverId, index) => {
+      const value = raw[index];
+      if (!value) return;
+
+      try {
+        fixes.set(driverId, JSON.parse(value) as DriverFix);
+      } catch {
+        // A malformed fix is not worth failing the whole map for.
+      }
+    });
+
+    return fixes;
+  }
+
   async isOnline(driverId: string): Promise<boolean> {
     return (await this.redis.client.exists(RedisKey.driverPresence(driverId))) === 1;
   }

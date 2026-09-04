@@ -24,4 +24,6 @@ export const JOB = {
   PRUNE_TRACK_POINTS: 'prune-track-points',
   PRUNE_IDEMPOTENCY_KEYS: 'prune-idempotency-keys',
   PRUNE_OTP_RECORDS: 'prune-otp-records',
+  PRUNE_AUTH_RECORDS: 'prune-auth-records',
+  PRUNE_ORPHANED_FILES: 'prune-orphaned-files',
 } as const;

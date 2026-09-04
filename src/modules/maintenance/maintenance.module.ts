@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { EarningsModule } from '../earnings/earnings.module.js';
 import { MaintenanceProcessor } from './maintenance.processor.js';
 import { MaintenanceService } from './maintenance.service.js';
+import { OrphanedFilesService } from './orphaned-files.service.js';
 
 /**
  * The worker follows the same rule as the others: a BullMQ worker holds a
@@ -13,7 +14,7 @@ const worker = process.env.MATCHING_ENABLED === 'false' ? [] : [MaintenanceProce
 
 @Module({
   imports: [EarningsModule],
-  providers: [MaintenanceService, ...worker],
-  exports: [MaintenanceService],
+  providers: [MaintenanceService, OrphanedFilesService, ...worker],
+  exports: [MaintenanceService, OrphanedFilesService],
 })
 export class MaintenanceModule {}

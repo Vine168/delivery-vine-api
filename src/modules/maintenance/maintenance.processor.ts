@@ -4,6 +4,7 @@ import { Queue, type Job } from 'bullmq';
 import { JOB, QUEUE } from '../../common/constants/queues.js';
 import { EarningsReconciliationService } from '../earnings/earnings-reconciliation.service.js';
 import { MaintenanceService } from './maintenance.service.js';
+import { OrphanedFilesService } from './orphaned-files.service.js';
 
 /**
  * The schedule.
@@ -17,6 +18,10 @@ const SCHEDULE: { name: string; pattern: string }[] = [
   { name: JOB.PRUNE_TRACK_POINTS, pattern: '17 3 * * *' },
   { name: JOB.PRUNE_IDEMPOTENCY_KEYS, pattern: '32 3 * * *' },
   { name: JOB.PRUNE_OTP_RECORDS, pattern: '47 3 * * *' },
+  { name: JOB.PRUNE_AUTH_RECORDS, pattern: '2 4 * * *' },
+  // Weekly, and last: it talks to object storage, which is slower and
+  // costlier per call than anything else here.
+  { name: JOB.PRUNE_ORPHANED_FILES, pattern: '22 4 * * 0' },
 ];
 
 /**
@@ -34,6 +39,7 @@ export class MaintenanceProcessor extends WorkerHost implements OnApplicationBoo
   constructor(
     @InjectQueue(QUEUE.MAINTENANCE) private readonly queue: Queue,
     private readonly maintenance: MaintenanceService,
+    private readonly orphanedFiles: OrphanedFilesService,
     private readonly reconciliation: EarningsReconciliationService,
   ) {
     super();
@@ -67,6 +73,16 @@ export class MaintenanceProcessor extends WorkerHost implements OnApplicationBoo
         break;
       case JOB.PRUNE_OTP_RECORDS:
         await this.maintenance.pruneOtpVerifications();
+        break;
+      case JOB.PRUNE_AUTH_RECORDS:
+        // Tokens before sessions: a session cannot go while its tokens
+        // reference it.
+        await this.maintenance.pruneRefreshTokens();
+        await this.maintenance.pruneSessions();
+        await this.maintenance.prunePushDispatches();
+        break;
+      case JOB.PRUNE_ORPHANED_FILES:
+        await this.orphanedFiles.sweep();
         break;
       default:
         this.logger.warn(`Unknown maintenance job: ${job.name}`);
