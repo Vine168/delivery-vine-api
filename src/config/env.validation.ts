@@ -358,6 +358,20 @@ export class EnvironmentVariables {
   @IsOptional()
   SWAGGER_ENABLED = true;
 
+  /**
+   * Credentials for the documentation. Optional, and when unset the docs are
+   * open — which production refuses to start with, since the document maps
+   * every endpoint including the back office.
+   */
+  @IsString()
+  @IsOptional()
+  SWAGGER_USER?: string;
+
+  @IsString()
+  @MinLength(12, { message: 'SWAGGER_PASSWORD must be at least 12 characters' })
+  @IsOptional()
+  SWAGGER_PASSWORD?: string;
+
   @IsString()
   @MinLength(32, { message: 'ENCRYPTION_KEY must be at least 32 characters' })
   ENCRYPTION_KEY: string;
@@ -418,6 +432,14 @@ function assertSafeInProduction(env: EnvironmentVariables): void {
     problems.push(
       'CORS_ORIGINS must name the origins you serve in production — the API sends credentials, ' +
         'and "*" lets any site make authenticated requests on a signed-in user’s behalf.',
+    );
+  }
+
+  if (env.SWAGGER_ENABLED && !(env.SWAGGER_USER && env.SWAGGER_PASSWORD)) {
+    problems.push(
+      'SWAGGER_USER and SWAGGER_PASSWORD must both be set when SWAGGER_ENABLED is true in production — ' +
+        'the document maps every endpoint including the back office, and leaving it open hands that map to anyone ' +
+        'who finds the URL. Set SWAGGER_ENABLED=false instead if the docs are not needed there.',
     );
   }
 

@@ -12,6 +12,9 @@ export const appConfig = registerAs('app', () => ({
    * The document describes every endpoint, back office included, so it is
    * off in production unless someone deliberately turns it on.
    */
+  /** When both are set, the documentation asks for them over HTTP Basic. */
+  swaggerUser: process.env.SWAGGER_USER,
+  swaggerPassword: process.env.SWAGGER_PASSWORD,
   swaggerEnabled:
     process.env.SWAGGER_ENABLED === 'true' ||
     (process.env.SWAGGER_ENABLED !== 'false' && process.env.NODE_ENV !== NodeEnv.Production),

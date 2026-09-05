@@ -17,6 +17,7 @@ const SAFE = {
   STORAGE_ENDPOINT: 'storage',
   MAP_BASE_URL: 'https://dev-map-api.roktenh.com',
   MAP_API_KEY: 'map-key',
+  SWAGGER_ENABLED: false,
 };
 
 const validate = (overrides: Record<string, unknown> = {}) => () => validateEnv({ ...SAFE, ...overrides });
@@ -36,6 +37,23 @@ describe('validateEnv', () => {
     it('refuses a wildcard CORS origin, because the API sends credentials', () => {
       expect(validate({ CORS_ORIGINS: '*' })).toThrow(/CORS_ORIGINS/);
       expect(validate({ CORS_ORIGINS: ' * ' })).toThrow(/CORS_ORIGINS/);
+    });
+
+    it('refuses to publish the API map without a password on it', () => {
+      // The document names every endpoint including the back office, and which
+      // permission each one needs.
+      expect(validate({ SWAGGER_ENABLED: true })).toThrow(/SWAGGER_USER and SWAGGER_PASSWORD/);
+      expect(validate({ SWAGGER_ENABLED: true, SWAGGER_USER: 'docs' })).toThrow(/SWAGGER_PASSWORD/);
+    });
+
+    it('allows published docs once they are behind credentials', () => {
+      expect(
+        validate({ SWAGGER_ENABLED: true, SWAGGER_USER: 'docs', SWAGGER_PASSWORD: 'a-long-enough-secret' }),
+      ).not.toThrow();
+    });
+
+    it('allows docs to simply be switched off instead', () => {
+      expect(validate({ SWAGGER_ENABLED: false })).not.toThrow();
     });
 
     it('refuses secrets that were never replaced', () => {

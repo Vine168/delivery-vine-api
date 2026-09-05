@@ -1,4 +1,7 @@
 import type { INestApplication } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import type { IncomingMessage, ServerResponse } from 'node:http';
+import { CryptoUtil } from '../common/utils/crypto.util.js';
 import { DocumentBuilder, SwaggerModule, type OpenAPIObject } from '@nestjs/swagger';
 import { ApiErrorDto, ApiSuccessDto, CursorMetaDto, PageMetaDto } from '../common/dto/api-response.dto.js';
 
@@ -120,9 +123,73 @@ function operationIdFactory(controllerKey: string, methodKey: string, version?: 
   return number && number !== '1' ? `${name}_v${number}` : name;
 }
 
+/**
+ * Password protection for the documentation, when credentials are configured.
+ *
+ * The document describes every endpoint on the platform, the back office
+ * included — which routes exist, what they accept, which permission each one
+ * needs. That is a map worth having before attacking something, and it was
+ * readable by anyone who found the URL.
+ *
+ * HTTP Basic rather than a bearer token because this is a page a person opens
+ * in a browser: the browser prompts, remembers, and sends the header on the
+ * asset requests too. There is nothing to log into and no session to manage.
+ *
+ * Returns undefined when no credentials are set, leaving the docs open — which
+ * is what local development wants, and which production refuses to boot with.
+ */
+function basicAuthGuard(app: INestApplication):
+  | ((request: IncomingMessage, response: ServerResponse, next: () => void) => void)
+  | undefined {
+  const config = app.get(ConfigService);
+  const user = config.get<string>('app.swaggerUser');
+  const password = config.get<string>('app.swaggerPassword');
+
+  if (!user || !password) return undefined;
+
+  return (request, response, next) => {
+    const header = request.headers.authorization ?? '';
+    const [scheme, encoded] = header.split(' ');
+
+    if (scheme?.toLowerCase() === 'basic' && encoded) {
+      const [suppliedUser, ...rest] = Buffer.from(encoded, 'base64').toString('utf8').split(':');
+      const suppliedPassword = rest.join(':');
+
+      // Both compared, and always both, so the time taken says nothing about
+      // which half was wrong.
+      const userOk = CryptoUtil.safeEqual(suppliedUser ?? '', user);
+      const passwordOk = CryptoUtil.safeEqual(suppliedPassword, password);
+
+      if (userOk && passwordOk) {
+        next();
+        return;
+      }
+    }
+
+    // No detail about what was missing or wrong: an unauthenticated caller
+    // should not learn whether the username exists.
+    response.statusCode = 401;
+    response.setHeader('WWW-Authenticate', 'Basic realm="Deliver API documentation", charset="UTF-8"');
+    response.setHeader('Content-Type', 'application/json');
+    response.end(JSON.stringify({ success: false, code: 'UNAUTHORIZED', message: 'Authentication is required.' }));
+  };
+}
+
 /** Builds the document and serves it at `/{prefix}/docs`. */
 export function setupSwagger(app: INestApplication, apiPrefix: string): void {
   const document = buildOpenApiDocument(app, apiPrefix);
+
+  // Registered before the documentation routes, so it covers the page, the
+  // static assets and the JSON document alike — the spec is the part worth
+  // protecting, and serving it unguarded next to a locked page would be
+  // pointless.
+  const guard = basicAuthGuard(app);
+  if (guard) {
+    (app as unknown as { use: (path: string, handler: unknown) => void }).use(
+      `/${apiPrefix}/docs`,
+      guard,
+    );
+  }
 
   SwaggerModule.setup(`${apiPrefix}/docs`, app, document, {
     jsonDocumentUrl: `${apiPrefix}/docs/json`,

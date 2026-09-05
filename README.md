@@ -61,6 +61,11 @@ Swagger UI is served at `/api/docs`, with the raw document at
 `/api/docs/json`. It is generated from the running code, so it cannot drift
 from the API.
 
+Set `SWAGGER_USER` and `SWAGGER_PASSWORD` and the docs — page, assets and JSON
+alike — sit behind HTTP Basic. Leave them blank in development to browse
+freely; production refuses to start with the docs enabled and no credentials,
+because the document maps every endpoint including the back office.
+
 `npm run swagger:export` writes `openapi.json` without starting a server — for
 generating a client, importing into Postman, or diffing the API surface in
 review. The file is committed, so a change to the API shows up in the diff.
@@ -97,6 +102,7 @@ safe on a laptop:
   response, so anyone who can call register with someone else's number gets
   their code
 - `CORS_ORIGINS=*` — the API sends credentials
+- `SWAGGER_ENABLED=true` without `SWAGGER_USER`/`SWAGGER_PASSWORD`
 - signing secrets that still look like placeholders, or one secret shared
   between access and refresh tokens
 
@@ -153,7 +159,7 @@ docs/back-office.md       how the admin API is meant to be used
 ## What is built
 
 Nine phases for the mobile apps, eight for the back office, then a
-correctness pass. 179 endpoints, 3 socket messages, 569 tests.
+correctness pass. 179 endpoints, 3 socket messages, 572 tests.
 
 | Area | Highlights |
 | --- | --- |
