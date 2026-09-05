@@ -14,6 +14,15 @@ export const authConfig = registerAs('auth', () => ({
   loginAttemptWindowSeconds: Number(process.env.LOGIN_ATTEMPT_WINDOW_SECONDS ?? 900),
   /** How long the account stays locked once it trips. */
   loginLockSeconds: Number(process.env.LOGIN_LOCK_SECONDS ?? 900),
+  /**
+   * Whether a refresh must name the device it comes from.
+   *
+   * A refresh from a *different* device is always refused. This decides what
+   * happens when a client names no device at all: older app builds do not send
+   * one, so refusing by default would sign their users out the day it ships.
+   * Turn it on once the apps in the field are known to send it.
+   */
+  requireDeviceOnRefresh: process.env.AUTH_REFRESH_REQUIRE_DEVICE === 'true',
 }));
 
 export type AuthConfig = ReturnType<typeof authConfig>;

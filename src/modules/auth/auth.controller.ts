@@ -216,7 +216,7 @@ export class AuthController {
     { status: 401, code: ResponseCode.REFRESH_TOKEN_REUSED },
   )
   refresh(@Body() dto: RefreshTokenDto, @Req() request: Request): Promise<AuthTokensDto> {
-    return this.auth.refresh(dto.refreshToken, this.metadata(request));
+    return this.auth.refresh(dto.refreshToken, { ...this.metadata(request), device: dto.device });
   }
 
   @Post('logout')

@@ -159,11 +159,11 @@ docs/back-office.md       how the admin API is meant to be used
 ## What is built
 
 Nine phases for the mobile apps, eight for the back office, then a
-correctness pass. 179 endpoints, 3 socket messages, 580 tests.
+correctness pass. 179 endpoints, 3 socket messages, 587 tests.
 
 | Area | Highlights |
 | --- | --- |
-| Auth | Registration → OTP → password, single-use refresh tokens with family revocation, Argon2id, per-account sign-in lockout |
+| Auth | Registration → OTP → password, single-use refresh tokens with family revocation, Argon2id, per-account sign-in lockout, device-bound refresh |
 | Profiles | Customer and driver profiles, addresses, vehicles, documents, MinIO storage with signed URLs |
 | Delivery | Quote and booking on one pricing path, a state machine with per-actor rules, full audit trail |
 | Matching | Redis GEO presence, widening rounds, one `/matrix` call per round, atomic accept |

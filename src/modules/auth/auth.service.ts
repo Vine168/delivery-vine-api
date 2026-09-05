@@ -8,6 +8,7 @@ import { OtpChannel, OtpPurpose, UserRole, UserStatus } from '../../generated/pr
 import type {
   ForgotPasswordDto,
   LoginDto,
+  DeviceInfoDto,
   RegisterCustomerDto,
   ResetPasswordDto,
   SendOtpDto,
@@ -285,7 +286,7 @@ export class AuthService {
     return { user: this.toAuthUserDto(user), tokens };
   }
 
-  async refresh(refreshToken: string, meta: RequestMetadata) {
+  async refresh(refreshToken: string, meta: RequestMetadata & { device?: DeviceInfoDto }) {
     return this.tokens.rotate(refreshToken, meta);
   }
 

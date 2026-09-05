@@ -230,6 +230,12 @@ export class EnvironmentVariables {
   @IsOptional()
   LOGIN_LOCK_SECONDS = 900;
 
+  /** Refuse a refresh that names no device, not only one that mismatches. */
+  @toBool()
+  @IsBoolean()
+  @IsOptional()
+  AUTH_REFRESH_REQUIRE_DEVICE = false;
+
   // ── SMS gateway (PlasGate) ──
   // All optional: with none of them set, OTP codes go to the log as before.
   @IsString()

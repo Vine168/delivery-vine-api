@@ -164,6 +164,16 @@ export class RefreshTokenDto {
   @IsNotEmpty()
   @MaxLength(1024)
   refreshToken: string;
+
+  @ApiPropertyOptional({
+    type: DeviceInfoDto,
+    description:
+      'The device asking. Send the same installation id used at sign-in: a refresh presented from a different device is refused, which is what makes a stolen token useless off the phone it was taken from.',
+  })
+  @ValidateNested()
+  @Type(() => DeviceInfoDto)
+  @IsOptional()
+  device?: DeviceInfoDto;
 }
 
 export class LogoutDto {

@@ -70,6 +70,11 @@ export class TokenService {
     return parseDurationToSeconds(this.config.get<string>('jwt.refreshExpiresIn', '30d'));
   }
 
+  /** Whether a refresh must name its device, not merely match when it does. */
+  private get requireDeviceOnRefresh(): boolean {
+    return this.config.get<boolean>('auth.requireDeviceOnRefresh', false);
+  }
+
   /**
    * Creates a session (and registers the device) then issues the first pair.
    *
@@ -115,6 +120,7 @@ export class TokenService {
         revokedAt: true,
         expiresAt: true,
         user: { select: { id: true, role: true, status: true, deletedAt: true } },
+        session: { select: { device: { select: { installationId: true } } } },
       },
     });
 
@@ -135,6 +141,8 @@ export class TokenService {
       throw AppException.forbidden(ResponseCode.ACCOUNT_SUSPENDED);
     }
 
+    await this.assertSameDevice(existing.session?.device?.installationId, context.device, existing.familyId);
+
     const tokens = await this.issuePair(
       {
         id: existing.user.id,
@@ -154,6 +162,52 @@ export class TokenService {
     });
 
     return tokens;
+  }
+
+  /**
+   * Keeps a refresh token on the device it was issued to.
+   *
+   * Rotation already catches a stolen token *after* it is used twice; this
+   * refuses it the first time, on a device that is not the one that signed in.
+   *
+   * A mismatch is always refused and burns the family — a token being
+   * presented from somewhere else is the definition of the leak the family
+   * revocation exists for. A request that says nothing about its device is a
+   * judgement call: older app builds do not send one, so refusing by default
+   * would sign every one of their users out on the day this shipped. It is
+   * allowed and logged, and `AUTH_REFRESH_REQUIRE_DEVICE=true` turns it into a
+   * refusal once the apps in the field are known to send it.
+   *
+   * The two mobile apps are separate installations, so one person running both
+   * the customer and driver app has two sessions with two device ids, and
+   * neither can refresh the other.
+   */
+  private async assertSameDevice(
+    sessionInstallationId: string | undefined,
+    device: DeviceInfoDto | undefined,
+    familyId: string,
+  ): Promise<void> {
+    if (!sessionInstallationId) return;
+
+    if (!device?.installationId) {
+      if (this.requireDeviceOnRefresh) {
+        this.logger.warn(`Refresh without a device for family ${familyId}`);
+        throw AppException.unauthorized(
+          ResponseCode.REFRESH_TOKEN_INVALID,
+          'This session is tied to a device. Sign in again.',
+        );
+      }
+      return;
+    }
+
+    if (device.installationId !== sessionInstallationId) {
+      await this.revokeFamily(familyId);
+      this.logger.warn(`Refresh from a different device for family ${familyId}; family revoked`);
+      throw AppException.unauthorized(
+        ResponseCode.REFRESH_TOKEN_REUSED,
+        'This session has been revoked for security reasons. Please sign in again.',
+      );
+    }
   }
 
   async revokeSession(sessionId: string): Promise<void> {
