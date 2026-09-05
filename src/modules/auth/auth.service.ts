@@ -23,6 +23,7 @@ import type {
   RegistrationStartedDto,
 } from './dto/auth-response.dto.js';
 import { OtpService } from './services/otp.service.js';
+import { LoginAttemptsService } from './services/login-attempts.service.js';
 import { PasswordService } from './services/password.service.js';
 import { TokenService } from './services/token.service.js';
 
@@ -41,6 +42,7 @@ export class AuthService {
     private readonly tokens: TokenService,
     private readonly otp: OtpService,
     private readonly passwords: PasswordService,
+    private readonly loginAttempts: LoginAttemptsService,
   ) {}
 
   // ── Registration ───────────────────────────────────────────────────────
@@ -234,11 +236,21 @@ export class AuthService {
   // ── Session ────────────────────────────────────────────────────────────
 
   async login(dto: LoginDto, meta: RequestMetadata): Promise<AuthSessionDto> {
+    // Before the password is touched, so a locked account costs an attacker a
+    // request and teaches them nothing. Scoped to this phone *and* this role:
+    // one number holds a separate customer, driver and back-office account,
+    // and locking a driver out of earning because someone guessed at their
+    // customer password would be an attack in itself.
+    await this.loginAttempts.assertNotLocked(dto.phone, dto.role);
+
     const user = await this.users.findByPhoneAndRole(dto.phone, dto.role);
 
     if (!user) {
       // Equalise timing so a missing account is indistinguishable from a wrong password.
       await this.passwords.fakeVerify();
+      // Counted too, so probing for numbers that exist looks exactly like
+      // guessing a password.
+      await this.loginAttempts.recordFailure(dto.phone, dto.role);
       throw AppException.unauthorized(ResponseCode.INVALID_CREDENTIALS);
     }
 
@@ -251,10 +263,12 @@ export class AuthService {
 
     const valid = await this.passwords.verify(user.passwordHash, dto.password);
     if (!valid) {
+      await this.loginAttempts.recordFailure(dto.phone, dto.role);
       throw AppException.unauthorized(ResponseCode.INVALID_CREDENTIALS);
     }
 
     this.users.assertUsable(user.status);
+    await this.loginAttempts.recordSuccess(dto.phone, dto.role);
 
     if (this.passwords.needsRehash(user.passwordHash)) {
       const rehashed = await this.passwords.hash(dto.password);

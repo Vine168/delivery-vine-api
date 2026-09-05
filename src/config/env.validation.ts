@@ -213,6 +213,23 @@ export class EnvironmentVariables {
   @MaxLength(64)
   APP_TIMEZONE = 'Asia/Phnom_Penh';
 
+  // ── Sign-in protection ──
+  @toInt()
+  @IsInt()
+  @Min(3)
+  @IsOptional()
+  LOGIN_MAX_ATTEMPTS = 10;
+
+  @toInt()
+  @IsInt()
+  @IsOptional()
+  LOGIN_ATTEMPT_WINDOW_SECONDS = 900;
+
+  @toInt()
+  @IsInt()
+  @IsOptional()
+  LOGIN_LOCK_SECONDS = 900;
+
   // ── SMS gateway (PlasGate) ──
   // All optional: with none of them set, OTP codes go to the log as before.
   @IsString()

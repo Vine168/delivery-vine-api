@@ -4,6 +4,11 @@
  * global prefix, so these are namespace-relative.
  */
 export const RedisKey = {
+  /// Failed sign-ins, counted per account — a phone holds a separate
+  /// customer, driver and back-office account, and they lock independently.
+  loginFailures: (role: string, phone: string) => `login:fail:${role}:${phone}`,
+  loginLock: (role: string, phone: string) => `login:lock:${role}:${phone}`,
+
   // ── OTP ──
   otpCode: (purpose: string, identifier: string) => `otp:${purpose}:${identifier}`,
   otpResendCooldown: (purpose: string, identifier: string) => `otp:cooldown:${purpose}:${identifier}`,

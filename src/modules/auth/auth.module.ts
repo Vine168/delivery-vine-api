@@ -6,6 +6,7 @@ import { UsersModule } from '../users/users.module.js';
 import { AuthController } from './auth.controller.js';
 import { AuthService } from './auth.service.js';
 import { JwtStrategy } from './strategies/jwt.strategy.js';
+import { LoginAttemptsService } from './services/login-attempts.service.js';
 import { OtpService } from './services/otp.service.js';
 import { LoggingOtpSender, OTP_SENDER } from './services/otp-sender.interface.js';
 import { PlasGateOtpSender } from './services/plasgate-otp-sender.js';
@@ -17,6 +18,7 @@ import { TokenService } from './services/token.service.js';
   controllers: [AuthController],
   providers: [
     AuthService,
+    LoginAttemptsService,
     TokenService,
     OtpService,
     PasswordService,
