@@ -125,7 +125,7 @@ docs/back-office.md       how the admin API is meant to be used
 ## What is built
 
 Nine phases for the mobile apps, eight for the back office, then a
-correctness pass. 179 endpoints, 3 socket messages, 551 tests.
+correctness pass. 179 endpoints, 3 socket messages, 560 tests.
 
 | Area | Highlights |
 | --- | --- |
@@ -148,13 +148,17 @@ The back office is documented separately in [docs/back-office.md](docs/back-offi
 Two integrations are wired but not connected, both waiting on credentials
 rather than code:
 
-- **SMS** — OTP codes are written to the log. Swap the `OTP_SENDER` provider in
-  `auth.module.ts`.
 - **Push** — notifications are stored and pushed over the socket, but FCM is not
   called. Swap the `PUSH_SENDER` provider in `notifications.module.ts`.
 
-Neither pretends to succeed: the OTP response says where the code went, and a
-push attempt is recorded as `SKIPPED` rather than `SENT`.
+It does not pretend to succeed: a push attempt is recorded as `SKIPPED` rather
+than `SENT`.
+
+**SMS is live.** OTP codes go over PlasGate when `PLASGATE_PRIVATE_KEY`,
+`PLASGATE_SECRET_KEY` and `PLASGATE_SENDER` are set, and fall back to the log
+when they are not — so local development is unchanged. Escape every `$` in the
+secret key as `\$`: env values pass through variable expansion, which silently
+eats `$5$rounds=…` down to `$5=…`.
 
 **Refunds** are recorded and settled by an operator against the provider's own
 reference; the platform does not call a provider refund API. That is a

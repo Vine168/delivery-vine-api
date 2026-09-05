@@ -114,12 +114,23 @@ export class OtpService {
     await this.redis.setJson(RedisKey.otpCode(input.purpose, subjectKey), stored, ttlSeconds);
     await this.redis.client.set(cooldownKey, '1', 'EX', cooldownSeconds);
 
-    await this.sender.send({
-      identifier: input.identifier,
-      channel: input.channel,
-      code,
-      ttlSeconds,
-    });
+    try {
+      await this.sender.send({
+        identifier: input.identifier,
+        channel: input.channel,
+        code,
+        ttlSeconds,
+      });
+    } catch (error) {
+      // The cooldown was set a moment ago to stop someone spamming codes. If
+      // the code never actually left, that cooldown punishes them for our
+      // failure — they would be told to wait for a message that is not coming.
+      // So it is released, and the stored code with it, leaving them free to
+      // ask again straight away.
+      await this.redis.client.del(cooldownKey);
+      await this.redis.client.del(RedisKey.otpCode(input.purpose, subjectKey));
+      throw error;
+    }
 
     const exposeCode = this.config.get<boolean>('otp.exposeInResponse', false);
     return {

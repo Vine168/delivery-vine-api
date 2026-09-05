@@ -9,6 +9,7 @@ import { mapConfig } from './map.config.js';
 import { otpConfig } from './otp.config.js';
 import { paymentConfig, payoutConfig } from './payment.config.js';
 import { redisConfig } from './redis.config.js';
+import { smsConfig } from './sms.config.js';
 import { storageConfig } from './storage.config.js';
 
 @Global()
@@ -33,6 +34,7 @@ import { storageConfig } from './storage.config.js';
         jwtConfig,
         redisConfig,
         storageConfig,
+        smsConfig,
         mapConfig,
         otpConfig,
         deliveryConfig,

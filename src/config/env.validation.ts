@@ -213,6 +213,30 @@ export class EnvironmentVariables {
   @MaxLength(64)
   APP_TIMEZONE = 'Asia/Phnom_Penh';
 
+  // ── SMS gateway (PlasGate) ──
+  // All optional: with none of them set, OTP codes go to the log as before.
+  @IsString()
+  @IsOptional()
+  PLASGATE_BASE_URL = 'https://cloudapi.plasgate.com/rest/send';
+
+  @IsString()
+  @IsOptional()
+  PLASGATE_PRIVATE_KEY?: string;
+
+  @IsString()
+  @IsOptional()
+  PLASGATE_SECRET_KEY?: string;
+
+  @IsString()
+  @IsOptional()
+  @MaxLength(11)
+  PLASGATE_SENDER?: string;
+
+  @toInt()
+  @IsInt()
+  @IsOptional()
+  PLASGATE_TIMEOUT_MS = 10_000;
+
   // ── Delivery / matching ──
   @IsString()
   @IsOptional()
