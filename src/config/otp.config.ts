@@ -7,7 +7,8 @@ export const otpConfig = registerAs('otp', () => ({
   resendCooldownSeconds: Number(process.env.OTP_RESEND_COOLDOWN_SECONDS ?? 60),
   maxPerHour: Number(process.env.OTP_MAX_PER_HOUR ?? 5),
   verificationTokenTtlSeconds: Number(process.env.OTP_VERIFICATION_TOKEN_TTL_SECONDS ?? 900),
-  /// Development convenience only — validated to be false in production.
+  /// Returns the code in the API response. Development only: the boot-time
+  /// check in env.validation.ts refuses to start production with it on.
   exposeInResponse: process.env.OTP_EXPOSE_IN_RESPONSE === 'true',
 }));
 

@@ -381,5 +381,62 @@ export function validateEnv(config: Record<string, unknown>): EnvironmentVariabl
     throw new Error(`Invalid environment configuration:\n${details}`);
   }
 
+  assertSafeInProduction(validated);
+
   return validated;
+}
+
+/** Values that are obviously a placeholder rather than a secret. */
+const PLACEHOLDER = /^$|change[-_ ]?me|your[-_ ]?secret|example|placeholder|^secret$|^password$|^xxx/i;
+
+/**
+ * Settings that are fine on a laptop and dangerous on a production host.
+ *
+ * Per-field validation cannot express these: each value is individually
+ * legal, and only becomes a problem in combination with NODE_ENV. They are
+ * checked at boot and refuse to start rather than warn, because a warning in
+ * a startup log is read once and never again.
+ *
+ * This exists because two comments in the codebase promised that
+ * OTP_EXPOSE_IN_RESPONSE was "validated to be false in production" and nothing
+ * ever validated it — leaving an authentication bypass behind a note saying it
+ * was handled.
+ */
+function assertSafeInProduction(env: EnvironmentVariables): void {
+  if (env.NODE_ENV !== NodeEnv.Production) return;
+
+  const problems: string[] = [];
+
+  if (env.OTP_EXPOSE_IN_RESPONSE) {
+    problems.push(
+      'OTP_EXPOSE_IN_RESPONSE must be false in production — it returns verification codes in the API response, ' +
+        'so anyone who can call register with someone else’s number receives their code.',
+    );
+  }
+
+  if (env.CORS_ORIGINS.trim() === '*') {
+    problems.push(
+      'CORS_ORIGINS must name the origins you serve in production — the API sends credentials, ' +
+        'and "*" lets any site make authenticated requests on a signed-in user’s behalf.',
+    );
+  }
+
+  for (const key of ['JWT_ACCESS_SECRET', 'JWT_REFRESH_SECRET', 'ENCRYPTION_KEY'] as const) {
+    if (PLACEHOLDER.test(env[key] ?? '')) {
+      problems.push(`${key} still looks like a placeholder rather than a generated secret.`);
+    }
+  }
+
+  if (env.JWT_ACCESS_SECRET === env.JWT_REFRESH_SECRET) {
+    problems.push(
+      'JWT_ACCESS_SECRET and JWT_REFRESH_SECRET must differ — sharing one means a stolen access token ' +
+        'can be presented as a refresh token.',
+    );
+  }
+
+  if (problems.length > 0) {
+    throw new Error(
+      `Refusing to start in production with unsafe configuration:\n${problems.map((p) => `  • ${p}`).join('\n')}`,
+    );
+  }
 }

@@ -1,0 +1,147 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+# A second push to the same branch makes the first run irrelevant.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '24'
+  # The postinstall hook generates the Prisma client, and prisma.config.ts
+  # resolves DATABASE_URL to do it. Nothing connects while generating; the
+  # e2e job overrides this with the real one.
+  DATABASE_URL: 'postgresql://build:build@localhost:5432/build?schema=public'
+
+jobs:
+  verify:
+    name: Typecheck, lint and unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - run: npm ci
+
+      # The generated Prisma client is imported as ordinary source, so nothing
+      # typechecks until it exists.
+      - run: npx prisma generate
+
+      - name: Typecheck
+        run: npx tsc --noEmit -p tsconfig.json
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+  e2e:
+    name: End-to-end tests
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: deliver
+          POSTGRES_PASSWORD: deliver
+          POSTGRES_DB: deliver_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U deliver"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+
+      # Uploads are exercised for real — signed URLs, MIME sniffing, proof of
+      # delivery — so the suite needs object storage rather than a stub.
+      minio:
+        image: bitnami/minio:latest
+        env:
+          MINIO_ROOT_USER: minioadmin
+          MINIO_ROOT_PASSWORD: minioadmin
+          MINIO_DEFAULT_BUCKETS: deliver,deliver-public
+        ports: ['9000:9000']
+        options: >-
+          --health-cmd "curl -f http://localhost:9000/minio/health/live"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - run: npm ci
+      - run: npx prisma generate
+
+      - name: Write the test environment
+        run: |
+          cat > .env.test <<'ENV'
+          NODE_ENV=test
+          DATABASE_URL="postgresql://deliver:deliver@localhost:5432/deliver_test?schema=public"
+          REDIS_URL=redis://localhost:6379/1
+          REDIS_KEY_PREFIX=deliver-test:
+          JWT_ACCESS_SECRET=ci-access-secret-ci-access-secret-32
+          JWT_REFRESH_SECRET=ci-refresh-secret-ci-refresh-secret
+          JWT_ACCESS_EXPIRES_IN=15m
+          JWT_REFRESH_EXPIRES_IN=30d
+          ENCRYPTION_KEY=ci-encryption-key-ci-encryption-key
+          STORAGE_ENDPOINT=localhost
+          STORAGE_PORT=9000
+          STORAGE_USE_SSL=false
+          STORAGE_ACCESS_KEY=minioadmin
+          STORAGE_SECRET_KEY=minioadmin
+          STORAGE_BUCKET=deliver
+          STORAGE_PUBLIC_BUCKET=deliver-public
+          MAP_BASE_URL=https://dev-map-api.roktenh.com
+          MAP_API_KEY=ci-placeholder-the-map-is-stubbed
+          OTP_EXPOSE_IN_RESPONSE=true
+          # The specs drive matching themselves so their assertions are
+          # deterministic; a background worker would race them.
+          MATCHING_ENABLED=false
+          ENV
+
+      - name: Apply migrations
+        run: NODE_ENV=test npx prisma migrate deploy
+
+      - name: End-to-end tests
+        run: npm run test:e2e
+
+  image:
+    name: Build the container image
+    runs-on: ubuntu-latest
+    needs: verify
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      # Built on every change so a broken Dockerfile is caught here rather
+      # than at deploy time. Not pushed: publishing is a release decision.
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          tags: deliver-api:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

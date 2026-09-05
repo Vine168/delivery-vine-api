@@ -75,6 +75,34 @@ Docs are **off by default in production**, since the document describes every
 endpoint including the back office. Set `SWAGGER_ENABLED=true` there only if
 they are meant to be public.
 
+## Running it
+
+`Dockerfile` builds a production image: multi-stage, production dependencies
+only, non-root, with `dumb-init` as PID 1 so `SIGTERM` reaches Node and Nest's
+shutdown hooks actually run. `HEALTHCHECK` uses the same readiness probe the
+platform exposes. No `.env` is ever copied in.
+
+`.github/workflows/ci.yml` typechecks, lints, unit-tests and builds, then runs
+the full e2e suite against real Postgres, Redis and MinIO services — uploads
+and signed URLs are exercised for real, so a stub would not be honest — and
+builds the image on every change so a broken Dockerfile is caught before a
+deploy rather than during one.
+
+## Production safety
+
+`validateEnv` refuses to start in production with configuration that is only
+safe on a laptop:
+
+- `OTP_EXPOSE_IN_RESPONSE=true` — it returns verification codes in the API
+  response, so anyone who can call register with someone else's number gets
+  their code
+- `CORS_ORIGINS=*` — the API sends credentials
+- signing secrets that still look like placeholders, or one secret shared
+  between access and refresh tokens
+
+It refuses rather than warns, because a warning in a startup log is read once
+and never again.
+
 ## Conventions
 
 **ESM.** Every relative import ends in `.js` (`import { X } from './x.js'`), and
@@ -125,7 +153,7 @@ docs/back-office.md       how the admin API is meant to be used
 ## What is built
 
 Nine phases for the mobile apps, eight for the back office, then a
-correctness pass. 179 endpoints, 3 socket messages, 560 tests.
+correctness pass. 179 endpoints, 3 socket messages, 569 tests.
 
 | Area | Highlights |
 | --- | --- |

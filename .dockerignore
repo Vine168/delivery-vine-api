@@ -1,0 +1,17 @@
+node_modules
+dist
+
+# Generated inside the image, so the build does not depend on the host's copy.
+src/generated
+.git
+.github
+test
+coverage
+*.log
+openapi.json
+
+# Never ship secrets into an image. The example stays, so the required
+# variables are discoverable from the image itself.
+.env
+.env.*
+!.env.example
