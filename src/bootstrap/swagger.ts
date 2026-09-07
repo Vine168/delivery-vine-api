@@ -5,6 +5,14 @@ import { CryptoUtil } from '../common/utils/crypto.util.js';
 import { DocumentBuilder, SwaggerModule, type OpenAPIObject } from '@nestjs/swagger';
 import { ApiErrorDto, ApiSuccessDto, CursorMetaDto, PageMetaDto } from '../common/dto/api-response.dto.js';
 
+/**
+ * Where the documentation is served.
+ *
+ * Deliberately outside the API prefix: it is a page a person opens, not an
+ * endpoint a client calls, and `/swagger` is what someone types from memory.
+ */
+const DOCS_PATH = 'swagger';
+
 export const SWAGGER_TAGS = [
   ['Authentication', 'Registration, OTP, sign-in, token rotation and password recovery.'],
   ['Customer Profile', 'The signed-in customer account and avatar.'],
@@ -175,7 +183,16 @@ function basicAuthGuard(app: INestApplication):
   };
 }
 
-/** Builds the document and serves it at `/{prefix}/docs`. */
+/**
+ * Nest's INestApplication type does not expose the underlying `use`, which is
+ * how middleware is mounted at a path. Cast once, here, rather than at each
+ * call site.
+ */
+function use(app: INestApplication, path: string, handler: unknown): void {
+  (app as unknown as { use: (path: string, handler: unknown) => void }).use(path, handler);
+}
+
+/** Builds the document and serves it at `/swagger`. */
 export function setupSwagger(app: INestApplication, apiPrefix: string): void {
   const document = buildOpenApiDocument(app, apiPrefix);
 
@@ -185,14 +202,40 @@ export function setupSwagger(app: INestApplication, apiPrefix: string): void {
   // pointless.
   const guard = basicAuthGuard(app);
   if (guard) {
-    (app as unknown as { use: (path: string, handler: unknown) => void }).use(
-      `/${apiPrefix}/docs`,
-      guard,
-    );
+    use(app, `/${DOCS_PATH}`, guard);
   }
 
-  SwaggerModule.setup(`${apiPrefix}/docs`, app, document, {
-    jsonDocumentUrl: `${apiPrefix}/docs/json`,
+  /*
+   * A trailing slash silently breaks the page.
+   *
+   * Swagger UI asks for its own assets relatively (`./swagger/swagger-ui.js`).
+   * Opened at `/swagger` those resolve to `/swagger/swagger-ui.js` and load;
+   * opened at `/swagger/` the browser resolves them one level deeper, to
+   * `/swagger/swagger/…`, which 404s — so the page returns 200 and renders
+   * nothing at all. Redirect instead of serving a page that cannot load itself.
+   *
+   * After the guard, so a trailing slash still asks for the password rather
+   * than confirming the path exists.
+   */
+  use(app, '/', (request: IncomingMessage, response: ServerResponse, next: () => void) => {
+    // Mounted at the root deliberately: Express strips the mount path, so a
+    // handler mounted on `/swagger` sees `/` for both `/swagger` and
+    // `/swagger/` and cannot tell them apart — which redirects the working URL
+    // to itself, for ever.
+    const [pathname] = (request.url ?? '').split('?');
+
+    if (pathname === `/${DOCS_PATH}/`) {
+      response.statusCode = 301;
+      response.setHeader('Location', `/${DOCS_PATH}`);
+      response.end();
+      return;
+    }
+
+    next();
+  });
+
+  SwaggerModule.setup(DOCS_PATH, app, document, {
+    jsonDocumentUrl: `${DOCS_PATH}/json`,
     swaggerOptions: {
       persistAuthorization: true,
       tagsSorter: 'alpha',

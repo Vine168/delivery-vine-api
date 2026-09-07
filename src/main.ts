@@ -53,7 +53,7 @@ async function bootstrap(): Promise<void> {
 
   const logger = app.get(Logger);
   logger.log(`Deliver API listening on http://${host}:${port}/${apiPrefix}`);
-  logger.log(`API documentation at http://${host}:${port}/${apiPrefix}/docs`);
+  logger.log(`API documentation at http://${host}:${port}/swagger`);
 }
 
 await bootstrap();

@@ -17,7 +17,7 @@ npm run start:dev
 ```
 
 - API: <http://localhost:3000/api/v1>
-- Swagger: <http://localhost:3000/api/docs>
+- Swagger: <http://localhost:3000/swagger>
 - Health: <http://localhost:3000/health>
 
 ### Secrets you must set
@@ -57,8 +57,8 @@ npm run db:test:deploy
 
 ## API documentation
 
-Swagger UI is served at `/api/docs`, with the raw document at
-`/api/docs/json`. It is generated from the running code, so it cannot drift
+Swagger UI is served at `/swagger`, with the raw document at
+`/swagger/json`. It is generated from the running code, so it cannot drift
 from the API.
 
 Set `SWAGGER_USER` and `SWAGGER_PASSWORD` and the docs — page, assets and JSON
