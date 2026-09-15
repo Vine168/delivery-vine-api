@@ -127,6 +127,7 @@ export class DriverJobsService {
    */
   async accept(driverId: string, userId: string, deliveryId: string): Promise<JobOfferDto> {
     const assignment = await this.assertOfferOpen(driverId, deliveryId);
+    await this.assertNotOwnDelivery(userId, deliveryId);
     await this.assertDriverFree(driverId);
 
     const vehicle = await this.prisma.driverVehicle.findFirst({
@@ -245,6 +246,22 @@ export class DriverJobsService {
     }
 
     return assignment;
+  }
+
+  /**
+   * One account can both book and drive, so the person who booked a delivery
+   * may be a driver near its pickup. Matching never offers it to them; this
+   * refuses an offer that exists anyway — one made before that rule, say.
+   */
+  private async assertNotOwnDelivery(userId: string, deliveryId: string): Promise<void> {
+    const delivery = await this.prisma.delivery.findUnique({
+      where: { id: deliveryId },
+      select: { customer: { select: { userId: true } } },
+    });
+
+    if (delivery?.customer.userId === userId) {
+      throw AppException.forbidden(ResponseCode.JOB_OWN_DELIVERY);
+    }
   }
 
   private async assertDriverFree(driverId: string): Promise<void> {

@@ -3,11 +3,9 @@ import { ApiBearerAuth, ApiBody, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { ApiErrorResponses, ApiSuccessResponse } from '../../common/decorators/api-docs.decorator.js';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
 import { ResponseCode as ResponseCodeMeta } from '../../common/decorators/response-code.decorator.js';
-import { Roles } from '../../common/decorators/roles.decorator.js';
 import { ResponseCode } from '../../common/constants/response-codes.js';
 import { IdParamDto } from '../../common/dto/id-param.dto.js';
 import type { AuthenticatedUser } from '../../common/interfaces/authenticated-user.interface.js';
-import { UserRole } from '../../generated/prisma/enums.js';
 import { DeliveryExecutionService } from '../deliveries/delivery-execution.service.js';
 import {
   ArrivedDto,
@@ -19,10 +17,11 @@ import {
 } from '../deliveries/dto/execution.dto.js';
 import { DriverJobsService } from './driver-jobs.service.js';
 import { DeclineJobDto, JobOfferDto } from './dto/job.dto.js';
+import { RequiresApprovedDriver } from '../../common/decorators/capability.decorator.js';
 
 @ApiTags('Driver Job')
 @ApiBearerAuth()
-@Roles(UserRole.DRIVER)
+@RequiresApprovedDriver()
 @Controller({ path: 'mobile/driver/jobs', version: '1' })
 export class DriverJobsController {
   constructor(
@@ -64,6 +63,7 @@ export class DriverJobsController {
   })
   @ApiSuccessResponse({ code: ResponseCode.JOB_ACCEPTED, type: JobOfferDto })
   @ApiErrorResponses(
+    { status: 403, code: ResponseCode.JOB_OWN_DELIVERY },
     { status: 404, code: ResponseCode.JOB_NOT_FOUND },
     { status: 409, code: ResponseCode.DELIVERY_ALREADY_ASSIGNED },
     { status: 409, code: ResponseCode.JOB_OFFER_EXPIRED },

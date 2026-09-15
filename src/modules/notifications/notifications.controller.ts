@@ -5,6 +5,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
 import { ResponseCode as ResponseCodeMeta } from '../../common/decorators/response-code.decorator.js';
 import { ResponseCode } from '../../common/constants/response-codes.js';
 import { IdParamDto } from '../../common/dto/id-param.dto.js';
+import type { AuthenticatedUser } from '../../common/interfaces/authenticated-user.interface.js';
 import type { PaginatedResult } from '../../common/interfaces/paginated.interface.js';
 import {
   ListNotificationsQueryDto,
@@ -24,22 +25,26 @@ export class NotificationsController {
   @ResponseCodeMeta(ResponseCode.NOTIFICATIONS_FETCHED)
   @ApiOperation({
     summary: 'Your notifications',
-    description: 'Newest first. Works for customers and drivers alike.',
+    description:
+      'Newest first. Each app sees its own — the driver app its job and payout notices, the customer app its delivery updates — plus those meant for both, such as account notices. A build that has not said which app it is sees everything.',
   })
   @ApiPaginatedResponse({ code: ResponseCode.NOTIFICATIONS_FETCHED, type: NotificationDto })
   findAll(
-    @CurrentUser('userId') userId: string,
+    @CurrentUser() user: AuthenticatedUser,
     @Query() query: ListNotificationsQueryDto,
   ): Promise<PaginatedResult<NotificationDto>> {
-    return this.notifications.findAll(userId, query);
+    return this.notifications.findAll(user.userId, user.app, query);
   }
 
   @Get('notifications/unread-count')
   @ResponseCodeMeta(ResponseCode.NOTIFICATIONS_FETCHED)
-  @ApiOperation({ summary: 'How many are unread', description: 'For the badge, without fetching the list.' })
+  @ApiOperation({
+    summary: 'How many are unread',
+    description: 'For the badge, without fetching the list. Counts this app’s inbox only.',
+  })
   @ApiSuccessResponse({ code: ResponseCode.NOTIFICATIONS_FETCHED, type: UnreadCountDto })
-  unreadCount(@CurrentUser('userId') userId: string): Promise<UnreadCountDto> {
-    return this.notifications.unreadCount(userId);
+  unreadCount(@CurrentUser() user: AuthenticatedUser): Promise<UnreadCountDto> {
+    return this.notifications.unreadCount(user.userId, user.app);
   }
 
   @Patch('notifications/:id/read')
@@ -55,10 +60,13 @@ export class NotificationsController {
   @Post('notifications/read-all')
   @HttpCode(HttpStatus.OK)
   @ResponseCodeMeta(ResponseCode.NOTIFICATIONS_READ_ALL)
-  @ApiOperation({ summary: 'Mark everything as read' })
+  @ApiOperation({
+    summary: 'Mark everything as read',
+    description: 'Everything in this app’s inbox. The other app’s unread notifications stay unread.',
+  })
   @ApiSuccessResponse({ code: ResponseCode.NOTIFICATIONS_READ_ALL })
-  async markAllRead(@CurrentUser('userId') userId: string): Promise<null> {
-    await this.notifications.markAllRead(userId);
+  async markAllRead(@CurrentUser() user: AuthenticatedUser): Promise<null> {
+    await this.notifications.markAllRead(user.userId, user.app);
     return null;
   }
 

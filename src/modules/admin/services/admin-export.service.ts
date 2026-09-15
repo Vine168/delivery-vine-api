@@ -10,6 +10,7 @@ import { PrismaService } from '../../../database/prisma.service.js';
 import type { Prisma } from '../../../generated/prisma/client.js';
 import type { Currency } from '../../../generated/prisma/enums.js';
 import { AuditService } from '../audit.service.js';
+import { customerStatus } from './admin-customers.service.js';
 
 /**
  * How many rows an export may cover.
@@ -258,6 +259,7 @@ export class AdminExportService {
           select: {
             id: true,
             fullName: true,
+            suspendedAt: true,
             createdAt: true,
             user: { select: { phone: true, email: true, status: true } },
             _count: { select: { deliveries: { where: { status: { not: 'DRAFT' } } } } },
@@ -269,7 +271,7 @@ export class AdminExportService {
           row.fullName,
           row.user.phone,
           row.user.email,
-          row.user.status,
+          customerStatus(row, row.user.status),
           row._count.deliveries,
           row.createdAt.toISOString(),
         ]);

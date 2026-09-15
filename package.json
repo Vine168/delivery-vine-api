@@ -34,7 +34,8 @@
     "infra:up": "docker compose up -d",
     "infra:down": "docker compose down",
     "postinstall": "prisma generate",
-    "db:test:seed": "npm run build && NODE_ENV=test node dist/database/seed.js"
+    "db:test:seed": "npm run build && NODE_ENV=test node dist/database/seed.js",
+    "db:merge-mobile-accounts": "npm run build && node dist/database/merge-mobile-accounts.js"
   },
   "dependencies": {
     "@nestjs/axios": "^12.0.0",

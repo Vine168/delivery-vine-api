@@ -1,11 +1,15 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { IsDateString, IsEnum, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsBoolean, IsDateString, IsEnum, IsOptional, IsString, MaxLength } from 'class-validator';
 import { PageQueryDto } from '../../../common/dto/pagination.dto.js';
 import { Currency, UserStatus } from '../../../generated/prisma/enums.js';
 
 export class AdminCustomerQueryDto extends PageQueryDto {
-  @ApiPropertyOptional({ enum: UserStatus, isArray: true })
+  @ApiPropertyOptional({
+    enum: UserStatus,
+    isArray: true,
+    description: 'SUSPENDED matches customers stopped from booking.',
+  })
   @Transform(({ value }) => (Array.isArray(value) ? value : value === undefined ? undefined : [value]))
   @IsEnum(UserStatus, { each: true })
   @IsOptional()
@@ -16,6 +20,15 @@ export class AdminCustomerQueryDto extends PageQueryDto {
   @MaxLength(120)
   @IsOptional()
   search?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'True for customers who have booked at least once, false for those who never have. Every driver holds a customer profile, so without it the list includes every driver too.',
+  })
+  @Transform(({ value }) => (value === undefined ? undefined : value === true || value === 'true'))
+  @IsBoolean()
+  @IsOptional()
+  hasOrdered?: boolean;
 
   @ApiPropertyOptional({ example: '2026-09-01', description: 'Signed up on or after this date.' })
   @IsDateString()
@@ -55,8 +68,17 @@ export class AdminCustomerRowDto {
   @ApiPropertyOptional({ nullable: true })
   avatarUrl: string | null;
 
-  @ApiProperty({ enum: UserStatus })
+  @ApiProperty({
+    enum: UserStatus,
+    description: 'SUSPENDED while an operator has stopped this customer booking; otherwise the account status.',
+  })
   status: UserStatus;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'Set when this person also drives. That side is suspended separately, under /admin/drivers.',
+  })
+  driverId: string | null;
 
   @ApiProperty({ example: 24, description: 'Bookings made, drafts excluded.' })
   deliveryCount: number;
@@ -92,7 +114,7 @@ export class AdminCustomerDetailDto extends AdminCustomerRowDto {
   @ApiPropertyOptional({ nullable: true })
   email: string | null;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ nullable: true, description: 'Why booking was suspended.' })
   suspendedReason: string | null;
 
   @ApiPropertyOptional({ nullable: true })

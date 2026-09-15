@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { Server } from 'socket.io';
 import { WsEvent, WsRoom } from '../common/constants/events.js';
+import { ClientApp } from '../generated/prisma/enums.js';
 
 /**
  * The only place that pushes to sockets.
@@ -28,6 +29,15 @@ export class RealtimeEmitter {
     this.emit(WsRoom.user(userId), event, payload);
   }
 
+  /**
+   * To one of the person's two apps, or to both when `app` is null. Sockets
+   * from a build that never said which app it is sit in both app rooms, so
+   * they keep receiving everything they always did.
+   */
+  toUserApp(userId: string, app: ClientApp | null, event: string, payload: unknown): void {
+    this.emit(app ? WsRoom.userApp(userId, app) : WsRoom.user(userId), event, payload);
+  }
+
   toDriver(driverId: string, event: string, payload: unknown): void {
     this.emit(WsRoom.driver(driverId), event, payload);
   }
@@ -40,7 +50,7 @@ export class RealtimeEmitter {
     this.emit(WsRoom.conversation(conversationId), event, payload);
   }
 
-  /** Everyone watching a delivery, plus the customer wherever they are in the app. */
+  /** Everyone watching a delivery, plus the customer wherever they are in the customer app. */
   toDeliveryParticipants(
     deliveryId: string,
     customerUserId: string | null,
@@ -49,7 +59,7 @@ export class RealtimeEmitter {
   ): void {
     this.toDelivery(deliveryId, event, payload);
     if (customerUserId) {
-      this.toUser(customerUserId, event, payload);
+      this.toUserApp(customerUserId, ClientApp.CUSTOMER, event, payload);
     }
   }
 

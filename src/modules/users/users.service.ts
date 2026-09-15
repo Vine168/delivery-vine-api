@@ -17,7 +17,7 @@ const authSelect = {
   passwordHash: true,
   phoneVerifiedAt: true,
   deletedAt: true,
-  customerProfile: { select: { id: true, fullName: true, avatarFileId: true } },
+  customerProfile: { select: { id: true, fullName: true, avatarFileId: true, suspendedAt: true } },
   driverProfile: { select: { id: true, fullName: true, avatarFileId: true, approvalStatus: true } },
 } as const;
 
@@ -63,7 +63,7 @@ export class UsersService {
       this.findById(userId),
       this.prisma.userSession.findUnique({
         where: { id: sessionId },
-        select: { id: true, userId: true, revokedAt: true },
+        select: { id: true, userId: true, revokedAt: true, app: true },
       }),
     ]);
 
@@ -82,8 +82,11 @@ export class UsersService {
       status: user.status,
       phone: user.phone,
       sessionId,
+      app: session.app ?? undefined,
       customerId: user.customerProfile?.id,
+      customerSuspended: Boolean(user.customerProfile?.suspendedAt),
       driverId: user.driverProfile?.id,
+      driverApprovalStatus: user.driverProfile?.approvalStatus,
     };
 
     await this.redis.setJson(cacheKey, context, AUTH_CONTEXT_TTL_SECONDS);
@@ -117,23 +120,40 @@ export class UsersService {
     }
   }
 
-  /** Frees the phone number for re-registration when an account is removed. */
+  /**
+   * Closes an account and frees the phone number for re-registration.
+   *
+   * Sessions end and push tokens go quiet in the same transaction, instead of
+   * being left to fail on their next use: a closed account should not keep
+   * notifying a phone, nor hold refresh tokens refused only because the account
+   * happens to be marked deleted. Revoked here rather than through
+   * TokenService, which lives in the auth module that already depends on this.
+   */
   async softDelete(userId: string): Promise<void> {
     const user = await this.prisma.user.findUniqueOrThrow({
       where: { id: userId },
       select: { phone: true, email: true },
     });
-    const stamp = Date.now();
+    const now = new Date();
+    const stamp = now.getTime();
 
-    await this.prisma.user.update({
-      where: { id: userId },
-      data: {
-        deletedAt: new Date(),
-        status: UserStatus.DEACTIVATED,
-        phone: `deleted:${stamp}:${user.phone}`,
-        email: user.email ? `deleted:${stamp}:${user.email}` : null,
-      },
-    });
+    await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id: userId },
+        data: {
+          deletedAt: now,
+          status: UserStatus.DEACTIVATED,
+          phone: `deleted:${stamp}:${user.phone}`,
+          email: user.email ? `deleted:${stamp}:${user.email}` : null,
+        },
+      }),
+      this.prisma.refreshToken.updateMany({ where: { userId, revokedAt: null }, data: { revokedAt: now } }),
+      this.prisma.userSession.updateMany({ where: { userId, revokedAt: null }, data: { revokedAt: now } }),
+      this.prisma.devicePushToken.updateMany({
+        where: { device: { userId }, isActive: true },
+        data: { isActive: false },
+      }),
+    ]);
 
     await this.invalidateAuthContext(userId);
   }

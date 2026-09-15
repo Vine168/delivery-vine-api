@@ -4,7 +4,15 @@ import { AppException } from '../../common/exceptions/app.exception.js';
 import { PhoneUtil } from '../../common/utils/phone.util.js';
 import { PrismaService } from '../../database/prisma.service.js';
 import { UsersService } from '../users/users.service.js';
-import { OtpChannel, OtpPurpose, UserRole, UserStatus } from '../../generated/prisma/enums.js';
+import type { AuthenticatedUser } from '../../common/interfaces/authenticated-user.interface.js';
+import {
+  ClientApp,
+  type DriverApprovalStatus,
+  OtpChannel,
+  OtpPurpose,
+  UserRole,
+  UserStatus,
+} from '../../generated/prisma/enums.js';
 import type {
   ForgotPasswordDto,
   LoginDto,
@@ -13,6 +21,7 @@ import type {
   ResetPasswordDto,
   SendOtpDto,
   SetPasswordDto,
+  StepUpDto,
   VerifyForgotPasswordDto,
   VerifyOtpDto,
 } from './dto/auth-request.dto.js';
@@ -22,15 +31,49 @@ import type {
   OtpChallengeDto,
   OtpVerifiedDto,
   RegistrationStartedDto,
+  StepUpTokenDto,
 } from './dto/auth-response.dto.js';
 import { OtpService } from './services/otp.service.js';
 import { LoginAttemptsService } from './services/login-attempts.service.js';
 import { PasswordService } from './services/password.service.js';
+import { StepUpService } from './services/step-up.service.js';
 import { TokenService } from './services/token.service.js';
 
 export interface RequestMetadata {
   ipAddress?: string;
   userAgent?: string;
+}
+
+/**
+ * The role every mobile account carries.
+ *
+ * One person has one account for both apps: they order deliveries as a
+ * customer and, once approved, drive with the same credentials. `role` no
+ * longer distinguishes the two — the profiles on the account do — so it exists
+ * only to keep back-office accounts a genuinely separate login.
+ */
+const MOBILE_ROLE = UserRole.CUSTOMER;
+
+/**
+ * Accepts the role an older app still sends and maps it onto the single
+ * mobile account. A build that posts `role: "DRIVER"` keeps working; it just
+ * resolves to the same account its customer screens use.
+ */
+function mobileRoleOf(role?: UserRole): UserRole {
+  return role === UserRole.ADMIN ? UserRole.ADMIN : MOBILE_ROLE;
+}
+
+/**
+ * Which app an older build is, from the role it still names at sign-in.
+ *
+ * Builds from before the apps said which they were each sent their own role —
+ * the customer app CUSTOMER, the driver app DRIVER — and that is the only word
+ * they give. A build that names neither is left unknown, and treated as both.
+ */
+function appFromRole(role?: UserRole): ClientApp | null {
+  if (role === UserRole.CUSTOMER) return ClientApp.CUSTOMER;
+  if (role === UserRole.DRIVER) return ClientApp.DRIVER;
+  return null;
 }
 
 @Injectable()
@@ -44,22 +87,36 @@ export class AuthService {
     private readonly otp: OtpService,
     private readonly passwords: PasswordService,
     private readonly loginAttempts: LoginAttemptsService,
+    private readonly stepUps: StepUpService,
   ) {}
 
   // ── Registration ───────────────────────────────────────────────────────
 
-  async register(dto: RegisterCustomerDto, role: UserRole, meta: RequestMetadata): Promise<RegistrationStartedDto> {
+  async register(
+    dto: RegisterCustomerDto,
+    enrolAsDriver: boolean,
+    meta: RequestMetadata,
+  ): Promise<RegistrationStartedDto> {
+    const role = MOBILE_ROLE;
     const existing = await this.users.findByPhoneAndRole(dto.phone, role);
 
     if (existing && existing.status !== UserStatus.PENDING_VERIFICATION) {
-      throw AppException.conflict(ResponseCode.ACCOUNT_ALREADY_EXISTS);
+      // From the driver app this is nearly always someone who already orders
+      // with us. One account serves both apps, so the way in is to sign in and
+      // apply — say so, rather than leave them trying another number.
+      throw AppException.conflict(
+        ResponseCode.ACCOUNT_ALREADY_EXISTS,
+        enrolAsDriver
+          ? 'You already have an account with this number. Sign in with the same password, then apply to drive.'
+          : undefined,
+      );
     }
 
     // Re-registering an unverified account simply refreshes it — the customer
     // never gets stuck because they closed the app before entering the code.
     const user = existing
-      ? await this.refreshPendingRegistration(existing.id, dto, role)
-      : await this.createPendingUser(dto, role);
+      ? await this.refreshPendingRegistration(existing.id, dto, enrolAsDriver)
+      : await this.createPendingUser(dto, enrolAsDriver);
 
     const challenge = await this.otp.issue({
       identifier: dto.phone,
@@ -76,29 +133,48 @@ export class AuthService {
     };
   }
 
-  private async createPendingUser(dto: RegisterCustomerDto, role: UserRole) {
+  /**
+   * Every mobile account can order from the moment it exists, so the customer
+   * profile is unconditional. Signing up through the driver app additionally
+   * enrols them, which saves that person applying immediately afterwards —
+   * they still wait for approval like anyone else.
+   */
+  private async createPendingUser(dto: RegisterCustomerDto, enrolAsDriver: boolean) {
     return this.prisma.user.create({
       data: {
         phone: dto.phone,
         email: dto.email,
-        role,
+        role: MOBILE_ROLE,
         status: UserStatus.PENDING_VERIFICATION,
-        ...(role === UserRole.CUSTOMER
-          ? { customerProfile: { create: { fullName: dto.fullName } } }
-          : { driverProfile: { create: { fullName: dto.fullName, availability: { create: {} } } } }),
+        customerProfile: { create: { fullName: dto.fullName } },
+        ...(enrolAsDriver
+          ? { driverProfile: { create: { fullName: dto.fullName, availability: { create: {} } } } }
+          : {}),
       },
       select: { id: true },
     });
   }
 
-  private async refreshPendingRegistration(userId: string, dto: RegisterCustomerDto, role: UserRole) {
+  private async refreshPendingRegistration(userId: string, dto: RegisterCustomerDto, enrolAsDriver: boolean) {
     return this.prisma.user.update({
       where: { id: userId },
       data: {
         email: dto.email,
-        ...(role === UserRole.CUSTOMER
-          ? { customerProfile: { update: { fullName: dto.fullName } } }
-          : { driverProfile: { update: { fullName: dto.fullName } } }),
+        customerProfile: {
+          upsert: { create: { fullName: dto.fullName }, update: { fullName: dto.fullName } },
+        },
+        // Someone who abandoned a customer sign-up and came back through the
+        // driver app should end up enrolled, not silently a customer again.
+        ...(enrolAsDriver
+          ? {
+              driverProfile: {
+                upsert: {
+                  create: { fullName: dto.fullName, availability: { create: {} } },
+                  update: { fullName: dto.fullName },
+                },
+              },
+            }
+          : {}),
       },
       select: { id: true },
     });
@@ -109,26 +185,24 @@ export class AuthService {
   async sendOtp(dto: SendOtpDto, meta: RequestMetadata): Promise<OtpChallengeDto> {
     const identifier = this.normaliseIdentifier(dto);
 
-    if (dto.purpose === OtpPurpose.REGISTRATION) {
-      const existing = await this.users.findByPhoneAndRole(identifier, dto.role);
-      if (existing && existing.status !== UserStatus.PENDING_VERIFICATION) {
-        throw AppException.conflict(ResponseCode.ACCOUNT_ALREADY_EXISTS);
-      }
+    const existing = await this.users.findByPhoneAndRole(identifier, mobileRoleOf(dto.role));
+
+    if (dto.purpose === OtpPurpose.REGISTRATION && existing && existing.status !== UserStatus.PENDING_VERIFICATION) {
+      throw AppException.conflict(ResponseCode.ACCOUNT_ALREADY_EXISTS);
     }
 
-    if (dto.purpose === OtpPurpose.PASSWORD_RESET || dto.purpose === OtpPurpose.LOGIN) {
-      const existing = await this.users.findByPhoneAndRole(identifier, dto.role);
-      if (!existing) {
-        // Do not confirm whether the account exists; return a plausible challenge.
-        return this.decoyChallenge(identifier);
-      }
+    // Without an account nothing could spend this code — set-password needs the
+    // pending account that register creates, and a reset needs a real one — so
+    // nothing is sent. Otherwise this endpoint would text any number on request.
+    if (!existing) {
+      return this.decoyChallenge(identifier);
     }
 
     const challenge = await this.otp.issue({
       identifier,
       channel: dto.channel,
       purpose: dto.purpose,
-      role: dto.role,
+      role: mobileRoleOf(dto.role),
       ipAddress: meta.ipAddress,
     });
 
@@ -139,7 +213,7 @@ export class AuthService {
     const identifier = this.normaliseIdentifier(dto);
 
     const result = await this.otp.verify(
-      { identifier, purpose: dto.purpose, role: dto.role },
+      { identifier, purpose: dto.purpose, role: mobileRoleOf(dto.role) },
       dto.code,
     );
 
@@ -151,7 +225,10 @@ export class AuthService {
 
   // ── Password ───────────────────────────────────────────────────────────
 
-  async setPassword(dto: SetPasswordDto, role: UserRole, meta: RequestMetadata): Promise<AuthSessionDto> {
+  /** `app` is the one whose sign-up route this came through. */
+  async setPassword(dto: SetPasswordDto, meta: RequestMetadata, app: ClientApp): Promise<AuthSessionDto> {
+    const role = MOBILE_ROLE;
+
     await this.otp.consumeVerificationToken(
       { identifier: dto.phone, purpose: OtpPurpose.REGISTRATION, role },
       dto.verificationToken,
@@ -178,11 +255,11 @@ export class AuthService {
 
     const { tokens } = await this.tokens.createSession(
       { id: user.id, role: user.role },
-      { device: dto.device, ipAddress: meta.ipAddress, userAgent: meta.userAgent },
+      { device: dto.device, app, ipAddress: meta.ipAddress, userAgent: meta.userAgent },
     );
 
     const refreshed = await this.users.findById(user.id);
-    return { user: this.toAuthUserDto(refreshed!), tokens };
+    return { user: this.toAuthUserDto(refreshed!, dto.device?.app ?? app), tokens };
   }
 
   async forgotPassword(dto: ForgotPasswordDto, meta: RequestMetadata): Promise<OtpChallengeDto> {
@@ -191,7 +268,7 @@ export class AuthService {
         identifier: dto.phone,
         channel: OtpChannel.SMS,
         purpose: OtpPurpose.PASSWORD_RESET,
-        role: dto.role,
+        role: mobileRoleOf(dto.role),
       },
       meta,
     );
@@ -202,18 +279,18 @@ export class AuthService {
       identifier: dto.phone,
       channel: OtpChannel.SMS,
       purpose: OtpPurpose.PASSWORD_RESET,
-      role: dto.role,
+      role: mobileRoleOf(dto.role),
       code: dto.code,
     });
   }
 
   async resetPassword(dto: ResetPasswordDto): Promise<void> {
     await this.otp.consumeVerificationToken(
-      { identifier: dto.phone, purpose: OtpPurpose.PASSWORD_RESET, role: dto.role },
+      { identifier: dto.phone, purpose: OtpPurpose.PASSWORD_RESET, role: mobileRoleOf(dto.role) },
       dto.verificationToken,
     );
 
-    const user = await this.users.findByPhoneAndRole(dto.phone, dto.role);
+    const user = await this.users.findByPhoneAndRole(dto.phone, mobileRoleOf(dto.role));
     if (!user) {
       throw AppException.notFound(ResponseCode.ACCOUNT_NOT_FOUND);
     }
@@ -239,19 +316,20 @@ export class AuthService {
   async login(dto: LoginDto, meta: RequestMetadata): Promise<AuthSessionDto> {
     // Before the password is touched, so a locked account costs an attacker a
     // request and teaches them nothing. Scoped to this phone *and* this role:
-    // one number holds a separate customer, driver and back-office account,
-    // and locking a driver out of earning because someone guessed at their
-    // customer password would be an attack in itself.
-    await this.loginAttempts.assertNotLocked(dto.phone, dto.role);
+    // a mobile account and a back-office account on the same number are
+    // separate logins, and locking an operator out because someone guessed at
+    // the mobile password would be an attack in itself.
+    const role = mobileRoleOf(dto.role);
+    await this.loginAttempts.assertNotLocked(dto.phone, role);
 
-    const user = await this.users.findByPhoneAndRole(dto.phone, dto.role);
+    const user = await this.users.findByPhoneAndRole(dto.phone, role);
 
     if (!user) {
       // Equalise timing so a missing account is indistinguishable from a wrong password.
       await this.passwords.fakeVerify();
       // Counted too, so probing for numbers that exist looks exactly like
       // guessing a password.
-      await this.loginAttempts.recordFailure(dto.phone, dto.role);
+      await this.loginAttempts.recordFailure(dto.phone, role);
       throw AppException.unauthorized(ResponseCode.INVALID_CREDENTIALS);
     }
 
@@ -264,12 +342,12 @@ export class AuthService {
 
     const valid = await this.passwords.verify(user.passwordHash, dto.password);
     if (!valid) {
-      await this.loginAttempts.recordFailure(dto.phone, dto.role);
+      await this.loginAttempts.recordFailure(dto.phone, role);
       throw AppException.unauthorized(ResponseCode.INVALID_CREDENTIALS);
     }
 
     this.users.assertUsable(user.status);
-    await this.loginAttempts.recordSuccess(dto.phone, dto.role);
+    await this.loginAttempts.recordSuccess(dto.phone, role);
 
     if (this.passwords.needsRehash(user.passwordHash)) {
       const rehashed = await this.passwords.hash(dto.password);
@@ -278,12 +356,13 @@ export class AuthService {
 
     await this.prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
 
+    const app = dto.device?.app ?? appFromRole(dto.role);
     const { tokens } = await this.tokens.createSession(
       { id: user.id, role: user.role },
-      { device: dto.device, ipAddress: meta.ipAddress, userAgent: meta.userAgent },
+      { device: dto.device, app, ipAddress: meta.ipAddress, userAgent: meta.userAgent },
     );
 
-    return { user: this.toAuthUserDto(user), tokens };
+    return { user: this.toAuthUserDto(user, app), tokens };
   }
 
   async refresh(refreshToken: string, meta: RequestMetadata & { device?: DeviceInfoDto }) {
@@ -294,7 +373,7 @@ export class AuthService {
     if (options.allDevices) {
       await this.tokens.revokeAllSessions(options.userId);
     } else if (options.refreshToken) {
-      await this.tokens.revokeByRefreshToken(options.refreshToken);
+      await this.tokens.revokeByRefreshToken(options.refreshToken, options.userId);
     } else {
       await this.tokens.revokeSession(sessionId);
     }
@@ -302,18 +381,61 @@ export class AuthService {
     await this.users.invalidateAuthContext(options.userId);
   }
 
+  // ── Step-up ────────────────────────────────────────────────────────────
+
+  /**
+   * Confirms the password again before something that moves money.
+   *
+   * One password now opens the driver wallet as well as the customer app, so
+   * a signed-in session alone must not be enough to redirect a payout.
+   * Failures count towards the same lockout as sign-in: this is a password
+   * check, and guessing here must cost exactly what it costs at the login
+   * screen. A wrong password is 403, not 401 — the session is fine, and most
+   * apps answer a 401 by signing the person out.
+   */
+  async stepUp(principal: AuthenticatedUser, dto: StepUpDto): Promise<StepUpTokenDto> {
+    const user = await this.users.findById(principal.userId);
+    if (!user?.passwordHash) {
+      throw AppException.forbidden(ResponseCode.INVALID_CREDENTIALS);
+    }
+
+    await this.loginAttempts.assertNotLocked(user.phone, user.role);
+
+    if (!(await this.passwords.verify(user.passwordHash, dto.password))) {
+      await this.loginAttempts.recordFailure(user.phone, user.role);
+      throw AppException.forbidden(ResponseCode.INVALID_CREDENTIALS, 'That password is not right.');
+    }
+
+    await this.loginAttempts.recordSuccess(user.phone, user.role);
+    return this.stepUps.issue(principal.sessionId);
+  }
+
   // ── Mapping helpers ────────────────────────────────────────────────────
 
-  toAuthUserDto(user: {
-    id: string;
-    phone: string;
-    email: string | null;
-    role: UserRole;
-    status: UserStatus;
-    customerProfile: { id: string; fullName: string; avatarFileId: string | null } | null;
-    driverProfile: { id: string; fullName: string; avatarFileId: string | null } | null;
-  }): AuthUserDto {
-    const profile = user.customerProfile ?? user.driverProfile;
+  toAuthUserDto(
+    user: {
+      id: string;
+      phone: string;
+      email: string | null;
+      role: UserRole;
+      status: UserStatus;
+      customerProfile: { id: string; fullName: string; avatarFileId: string | null; suspendedAt: Date | null } | null;
+      driverProfile: {
+        id: string;
+        fullName: string;
+        avatarFileId: string | null;
+        approvalStatus: DriverApprovalStatus;
+      } | null;
+    },
+    app?: ClientApp | null,
+  ): AuthUserDto {
+    // Each app shows its own name: the driver app the one the driver was
+    // approved under, the customer app whatever the person chose. A build
+    // that has not said which app it is gets the customer's, as before.
+    const profile =
+      app === ClientApp.DRIVER
+        ? (user.driverProfile ?? user.customerProfile)
+        : (user.customerProfile ?? user.driverProfile);
 
     return {
       id: user.id,
@@ -325,6 +447,8 @@ export class AuthService {
       avatarUrl: null,
       customerId: user.customerProfile?.id ?? null,
       driverId: user.driverProfile?.id ?? null,
+      customerSuspended: Boolean(user.customerProfile?.suspendedAt),
+      driverApprovalStatus: user.driverProfile?.approvalStatus ?? null,
     };
   }
 

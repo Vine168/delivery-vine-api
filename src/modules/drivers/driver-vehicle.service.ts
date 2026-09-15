@@ -3,11 +3,17 @@ import { IN_FLIGHT_DELIVERY_STATUSES } from '../../common/constants/delivery-sta
 import { ResponseCode } from '../../common/constants/response-codes.js';
 import { AppException } from '../../common/exceptions/app.exception.js';
 import { PrismaService } from '../../database/prisma.service.js';
-import { DocumentReviewStatus, FilePurpose } from '../../generated/prisma/enums.js';
+import {
+  DocumentReviewStatus,
+  FilePurpose,
+} from '../../generated/prisma/enums.js';
 import { FileUrlService } from '../uploads/file-url.service.js';
 import { UploadsService } from '../uploads/uploads.service.js';
 import { VehicleTypesService } from '../vehicle-types/vehicle-types.service.js';
-import type { DriverVehicleDto, UpsertDriverVehicleDto } from './dto/driver-vehicle.dto.js';
+import type {
+  DriverVehicleDto,
+  UpsertDriverVehicleDto,
+} from './dto/driver-vehicle.dto.js';
 
 const vehicleSelect = {
   id: true,
@@ -51,23 +57,51 @@ export class DriverVehicleService {
   }
 
   /**
+   * Every check upsert() makes before it writes — an active vehicle type, and
+   * a photo that is the caller's own vehicle photo. Returns the type. Public so
+   * the driver application can make them before saving any of its parts.
+   */
+  async assertValid(userId: string, dto: UpsertDriverVehicleDto) {
+    const vehicleType = await this.vehicleTypes.findActiveOrThrow(dto.vehicleTypeId);
+
+    if (!dto.photoFileId || !dto.photoFileId.trim()) {
+      throw AppException.unprocessable(
+        ResponseCode.DRIVER_VEHICLE_PHOTO_REQUIRED,
+        'Please upload a clear vehicle photo before saving the vehicle.',
+      );
+    }
+
+    await this.uploads.assertOwnedForPurpose(dto.photoFileId, userId, [FilePurpose.VEHICLE_PHOTO]);
+
+    return vehicleType;
+  }
+
+  /**
    * Creates the driver's vehicle, or updates it in place.
    *
    * Any change puts the vehicle back into review — a driver cannot swap to an
-   * unverified plate while keeping an approved status. Changing vehicle type is
-   * refused mid-delivery, since the customer booked a specific type.
+   * unverified plate while keeping an approved status. Sending the same details
+   * again is not a change and leaves the review where it was. Changing vehicle
+   * type is refused mid-delivery, since the customer booked a specific type.
    */
-  async upsert(driverId: string, userId: string, dto: UpsertDriverVehicleDto): Promise<DriverVehicleDto> {
-    const vehicleType = await this.vehicleTypes.findActiveOrThrow(dto.vehicleTypeId);
-
-    if (dto.photoFileId) {
-      await this.uploads.assertOwnedForPurpose(dto.photoFileId, userId, [FilePurpose.VEHICLE_PHOTO]);
-    }
+  async upsert(
+    driverId: string,
+    userId: string,
+    dto: UpsertDriverVehicleDto,
+  ): Promise<DriverVehicleDto> {
+    const vehicleType = await this.assertValid(userId, dto);
 
     const existing = await this.prisma.driverVehicle.findFirst({
       where: { driverId, isPrimary: true, deletedAt: null },
-      select: { id: true, photoFileId: true, vehicleTypeId: true },
+      select: vehicleSelect,
     });
+
+    // The app re-saves the whole form. Sending back exactly what an operator
+    // already reviewed is not a change, and resetting the review for it would
+    // take an approved driver off the road for tapping "Save".
+    if (existing && this.isUnchanged(existing, vehicleType.id, dto)) {
+      return this.toDto(existing);
+    }
 
     if (existing && existing.vehicleTypeId !== vehicleType.id) {
       await this.assertNoDeliveryInFlight(driverId);
@@ -80,7 +114,7 @@ export class DriverVehicleService {
       model: dto.model,
       color: dto.color,
       year: dto.year,
-      ...(dto.photoFileId ? { photoFileId: dto.photoFileId } : {}),
+      photoFileId: dto.photoFileId,
       status: DocumentReviewStatus.PENDING,
       reviewNote: null,
     };
@@ -88,17 +122,51 @@ export class DriverVehicleService {
     await this.assertPlateAvailable(driverId, dto.plateNumber, existing?.id);
 
     const vehicle = existing
-      ? await this.prisma.driverVehicle.update({ where: { id: existing.id }, data, select: vehicleSelect })
+      ? await this.prisma.driverVehicle.update({
+          where: { id: existing.id },
+          data,
+          select: vehicleSelect,
+        })
       : await this.prisma.driverVehicle.create({
           data: { ...data, driverId, isPrimary: true },
           select: vehicleSelect,
         });
 
-    if (dto.photoFileId && existing?.photoFileId && existing.photoFileId !== dto.photoFileId) {
+    if (existing?.photoFileId && existing.photoFileId !== dto.photoFileId) {
       await this.uploads.discard(existing.photoFileId);
     }
 
     return this.toDto(vehicle);
+  }
+
+  /**
+   * Whether the request leaves every reviewed detail as it is. An optional
+   * field left out of the body is not a change — the update skips it.
+   */
+  private isUnchanged(
+    current: {
+      vehicleTypeId: string;
+      plateNumber: string;
+      brand: string | null;
+      model: string | null;
+      color: string | null;
+      year: number | null;
+      photoFileId: string | null;
+    },
+    vehicleTypeId: string,
+    dto: UpsertDriverVehicleDto,
+  ): boolean {
+    const same = <T>(sent: T | undefined, stored: T | null) => sent === undefined || sent === stored;
+
+    return (
+      current.vehicleTypeId === vehicleTypeId &&
+      current.plateNumber === dto.plateNumber &&
+      current.photoFileId === dto.photoFileId &&
+      same(dto.brand, current.brand) &&
+      same(dto.model, current.model) &&
+      same(dto.color, current.color) &&
+      same(dto.year, current.year)
+    );
   }
 
   private async assertNoDeliveryInFlight(driverId: string): Promise<void> {
@@ -114,14 +182,25 @@ export class DriverVehicleService {
     }
   }
 
-  private async assertPlateAvailable(driverId: string, plateNumber: string, exceptId?: string): Promise<void> {
+  private async assertPlateAvailable(
+    driverId: string,
+    plateNumber: string,
+    exceptId?: string,
+  ): Promise<void> {
     const clash = await this.prisma.driverVehicle.findFirst({
-      where: { driverId, plateNumber, ...(exceptId ? { NOT: { id: exceptId } } : {}) },
+      where: {
+        driverId,
+        plateNumber,
+        ...(exceptId ? { NOT: { id: exceptId } } : {}),
+      },
       select: { id: true },
     });
 
     if (clash) {
-      throw AppException.conflict(ResponseCode.CONFLICT, 'You have already registered that plate number.');
+      throw AppException.conflict(
+        ResponseCode.CONFLICT,
+        'You have already registered that plate number.',
+      );
     }
   }
 

@@ -3,16 +3,15 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { ApiErrorResponses, ApiSuccessResponse } from '../../common/decorators/api-docs.decorator.js';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
 import { ResponseCode as ResponseCodeMeta } from '../../common/decorators/response-code.decorator.js';
-import { Roles } from '../../common/decorators/roles.decorator.js';
 import { ResponseCode } from '../../common/constants/response-codes.js';
 import type { AuthenticatedUser } from '../../common/interfaces/authenticated-user.interface.js';
-import { UserRole } from '../../generated/prisma/enums.js';
 import { CustomerProfileService } from './customer-profile.service.js';
 import { CustomerProfileDto, UpdateAvatarDto, UpdateCustomerProfileDto } from './dto/customer-profile.dto.js';
+import { RequiresCustomer } from '../../common/decorators/capability.decorator.js';
 
 @ApiTags('Customer Profile')
 @ApiBearerAuth()
-@Roles(UserRole.CUSTOMER)
+@RequiresCustomer()
 @Controller({ path: 'mobile/customer', version: '1' })
 export class CustomerProfileController {
   constructor(private readonly profiles: CustomerProfileService) {}
@@ -62,9 +61,14 @@ export class CustomerProfileController {
   @ApiOperation({
     summary: 'Delete the account',
     description:
-      'Soft deletion. Past deliveries and payments are retained as financial records; the phone number is released so it can be registered again.',
+      'Soft deletion. Past deliveries and payments are retained as financial records; the phone number is released so it can be registered again, and every session on every device ends. This is the driver account too, so it is refused while the account holds a delivery on either side, is online in the driver app, or still has money in motion — an earning not yet settled, a withdrawal being paid out, or a wallet balance. A closed account can never sign in to collect it.',
   })
-  @ApiErrorResponses({ status: 409, code: ResponseCode.ACCOUNT_HAS_ACTIVE_DELIVERIES })
+  @ApiErrorResponses(
+    { status: 409, code: ResponseCode.ACCOUNT_HAS_ACTIVE_DELIVERIES },
+    { status: 409, code: ResponseCode.CONFLICT, description: 'Still online in the driver app.' },
+    { status: 409, code: ResponseCode.ACCOUNT_HAS_PENDING_SETTLEMENT },
+    { status: 409, code: ResponseCode.ACCOUNT_HAS_WALLET_BALANCE },
+  )
   async deleteAccount(@CurrentUser() user: AuthenticatedUser): Promise<void> {
     await this.profiles.deleteAccount(user.customerId as string, user.userId);
   }

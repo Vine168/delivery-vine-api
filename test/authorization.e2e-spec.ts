@@ -33,10 +33,16 @@ interface Route {
   audience: Audience;
 }
 
-function audienceOf(path: string): Audience {
+function audienceOf(path: string, _method: string): Audience {
   if (PUBLIC_PREFIXES.some((prefix) => path.startsWith(prefix))) return 'public';
   if (SHARED_PREFIXES.some((prefix) => path.startsWith(prefix))) return 'shared';
   if (path.startsWith('/api/v1/mobile/customer')) return 'customer';
+  /*
+   * The one route under /mobile/driver a non-driver must reach, because it is
+   * how an account becomes one: the driver application. Both ways — reading it
+   * gives a customer the blank form, and submitting it makes them a driver.
+   */
+  if (path === '/api/v1/mobile/driver/application') return 'customer';
   if (path.startsWith('/api/v1/mobile/driver')) return 'driver';
   return 'shared';
 }
@@ -74,7 +80,7 @@ describe('Authorization matrix (e2e)', () => {
         .filter((method): method is Route['method'] =>
           ['get', 'post', 'patch', 'put', 'delete'].includes(method),
         )
-        .map((method) => ({ method, path, audience: audienceOf(path) })),
+        .map((method) => ({ method, path, audience: audienceOf(path, method) })),
     );
   });
 
@@ -120,20 +126,20 @@ describe('Authorization matrix (e2e)', () => {
     expect(leaked, `these accepted a forged token:\n${leaked.join('\n')}`).toEqual([]);
   });
 
-  it('keeps drivers out of customer endpoints', async () => {
-    const customerRoutes = routes.filter((route) => route.audience === 'customer');
-    expect(customerRoutes.length).toBeGreaterThan(15);
+  /*
+   * A driver is deliberately *not* kept out of the customer endpoints any
+   * more: one mobile account both orders and drives, so a driver reaching
+   * `/mobile/customer/...` is reaching their own customer side. What still
+   * has to hold is that they only ever see their own rows, which the
+   * stranger's-resource test below covers.
+   */
+  it('lets a driver use their own customer side', async () => {
+    const response = await call(
+      routes.find((route) => route.path.endsWith('/mobile/customer/addresses') && route.method === 'get')!,
+      driver.accessToken,
+    );
 
-    const leaked: string[] = [];
-
-    for (const route of customerRoutes) {
-      const response = await call(route, driver.accessToken);
-      if (response.status !== 403) {
-        leaked.push(`${route.method.toUpperCase()} ${route.path} → ${response.status}`);
-      }
-    }
-
-    expect(leaked, `a driver reached these customer endpoints:\n${leaked.join('\n')}`).toEqual([]);
+    expect(response.status).toBe(200);
   });
 
   it('keeps customers out of driver endpoints', async () => {

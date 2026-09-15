@@ -20,7 +20,7 @@ import { ValidationPipe } from '@nestjs/common';
 import type { AuthenticatedUser } from '../common/interfaces/authenticated-user.interface.js';
 import { PrismaService } from '../database/prisma.service.js';
 import { RedisService } from '../redis/redis.service.js';
-import { DeliveryStatus } from '../generated/prisma/enums.js';
+import { ClientApp, DeliveryStatus } from '../generated/prisma/enums.js';
 import { DriverAvailabilityService } from '../modules/driver-presence/driver-availability.service.js';
 import { RealtimeEmitter } from './realtime.emitter.js';
 import { SocketLocationDto, SubscribeDeliveryDto } from './dto/realtime.dto.js';
@@ -121,13 +121,15 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
 
     socket.data.user = user;
 
-    const rooms = [WsRoom.user(user.userId)];
-    if (user.driverId) rooms.push(WsRoom.driver(user.driverId));
+    const rooms = [WsRoom.user(user.userId), ...this.appRooms(user)];
+    // Job offers go to the driver room, so the customer app never joins it:
+    // one account is both, and an offer has no place on the ordering screen.
+    if (user.driverId && user.app !== ClientApp.CUSTOMER) rooms.push(WsRoom.driver(user.driverId));
 
     await socket.join(rooms);
 
-    // Rejoin the delivery a driver is already working, so a reconnect does not
-    // leave them silent mid-job.
+    // Rejoin deliveries already in motion, so a reconnect does not leave
+    // either side silent mid-job.
     const activeRooms = await this.activeDeliveryRooms(user);
     if (activeRooms.length > 0) {
       await socket.join(activeRooms);
@@ -240,8 +242,28 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
     }
   }
 
-  /** The delivery rooms a reconnecting client should be put back into. */
+  /**
+   * The person's per-app room. A build that has not said which app it is
+   * joins both, and so keeps receiving everything it always did.
+   */
+  private appRooms(user: AuthenticatedUser): string[] {
+    const apps = user.app ? [user.app] : [ClientApp.CUSTOMER, ClientApp.DRIVER];
+    return apps.map((app) => WsRoom.userApp(user.userId, app));
+  }
+
+  /**
+   * The delivery rooms a reconnecting client should be put back into: those on
+   * the side its app works, or on both for a build that has not said which app
+   * it is — one account can be out driving while a booking of its own is on
+   * the way.
+   */
   private async activeDeliveryRooms(user: AuthenticatedUser): Promise<string[]> {
+    const sides = [
+      ...(user.customerId && user.app !== ClientApp.DRIVER ? [{ customerId: user.customerId }] : []),
+      ...(user.driverId && user.app !== ClientApp.CUSTOMER ? [{ driverId: user.driverId }] : []),
+    ];
+    if (sides.length === 0) return [];
+
     const active = await this.prisma.delivery.findMany({
       where: {
         deletedAt: null,
@@ -255,7 +277,7 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
             DeliveryStatus.ARRIVED_DROPOFF,
           ],
         },
-        ...(user.driverId ? { driverId: user.driverId } : { customerId: user.customerId }),
+        OR: sides,
       },
       select: { id: true },
       take: 10,

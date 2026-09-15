@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import request from 'supertest';
 import { createTestHarness, type TestHarness } from './app-harness.js';
+import { submitDriverApplication } from './helpers.js';
 
 const API = '/api/v1';
 
@@ -128,15 +129,37 @@ describe('Authentication (e2e)', () => {
       expect(response.body.code).toBe('ACCOUNT_ALREADY_EXISTS');
     });
 
-    it('allows the same phone to hold both a customer and a driver account', async () => {
+    it('gives one phone a single account that both apps sign in to', async () => {
       const customer = await registerAndActivate('012000013', 'CUSTOMER');
-      const driver = await registerAndActivate('012000013', 'DRIVER');
 
-      expect(customer.user.id).not.toBe(driver.user.id);
+      // The number is taken now — there is no second account to register.
+      await http()
+        .post(`${API}/auth/customer/register`)
+        .send({ phone: '012000013', fullName: 'Someone Else' })
+        .expect(409);
+
       expect(customer.user.customerId).toBeTruthy();
       expect(customer.user.driverId).toBeNull();
-      expect(driver.user.driverId).toBeTruthy();
-      expect(driver.user.customerId).toBeNull();
+
+      // Driving is a capability the same account applies for — with the driver
+      // application alone. There is no separate enrol step any more.
+      await http()
+        .post(`${API}/mobile/driver/apply`)
+        .set({ Authorization: `Bearer ${customer.tokens.accessToken}` })
+        .expect(404);
+
+      const applied = await submitDriverApplication(harness, customer.tokens.accessToken);
+
+      expect(applied.body.data.approvalStatus).toBe('PENDING_APPROVAL');
+
+      const again = await http()
+        .post(`${API}/auth/login`)
+        .send({ phone: '012000013', password: 'Passw0rd1' })
+        .expect(200);
+
+      expect(again.body.data.user.id).toBe(customer.user.id);
+      expect(again.body.data.user.customerId).toBeTruthy();
+      expect(again.body.data.user.driverId).toBeTruthy();
     });
   });
 
@@ -164,12 +187,25 @@ describe('Authentication (e2e)', () => {
       expect(response.body.code).toBe('INVALID_CREDENTIALS');
     });
 
-    it('does not let a customer sign in through the driver role', async () => {
-      await registerAndActivate('012000022', 'CUSTOMER');
+    it('signs the one mobile account in whichever app asks', async () => {
+      const account = await registerAndActivate('012000022', 'CUSTOMER');
 
+      // An older driver build still sends role: DRIVER; it resolves to the
+      // same account rather than looking for a second one.
       const response = await http()
         .post(`${API}/auth/login`)
         .send({ phone: '012000022', password: 'Passw0rd1', role: 'DRIVER' })
+        .expect(200);
+
+      expect(response.body.data.user.id).toBe(account.user.id);
+    });
+
+    it('keeps a back-office account separate from the mobile one', async () => {
+      await registerAndActivate('012000024', 'CUSTOMER');
+
+      const response = await http()
+        .post(`${API}/auth/login`)
+        .send({ phone: '012000024', password: 'Passw0rd1', role: 'ADMIN' })
         .expect(401);
 
       expect(response.body.code).toBe('INVALID_CREDENTIALS');

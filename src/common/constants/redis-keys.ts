@@ -4,15 +4,19 @@
  * global prefix, so these are namespace-relative.
  */
 export const RedisKey = {
-  /// Failed sign-ins, counted per account — a phone holds a separate
-  /// customer, driver and back-office account, and they lock independently.
+  /// Failed sign-ins, counted per account — a phone's mobile account and its
+  /// back-office account lock independently.
   loginFailures: (role: string, phone: string) => `login:fail:${role}:${phone}`,
   loginLock: (role: string, phone: string) => `login:lock:${role}:${phone}`,
+  /** Proof the password was just re-entered on this session, before a money action. */
+  stepUp: (sessionId: string) => `auth:step-up:${sessionId}`,
 
   // ── OTP ──
   otpCode: (purpose: string, identifier: string) => `otp:${purpose}:${identifier}`,
   otpResendCooldown: (purpose: string, identifier: string) => `otp:cooldown:${purpose}:${identifier}`,
   otpHourlyCounter: (purpose: string, identifier: string) => `otp:hourly:${purpose}:${identifier}`,
+  /** Guesses against the live code, counted atomically so parallel guesses cannot share a count. */
+  otpAttempts: (purpose: string, identifier: string) => `otp:attempts:${purpose}:${identifier}`,
   otpVerificationToken: (token: string) => `otp:verification:${token}`,
 
   // ── Rate limiting ──

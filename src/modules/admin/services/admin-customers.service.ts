@@ -6,8 +6,7 @@ import type { PaginatedResult } from '../../../common/interfaces/paginated.inter
 import { PaginationUtil } from '../../../common/utils/pagination.util.js';
 import { PrismaService } from '../../../database/prisma.service.js';
 import type { Prisma } from '../../../generated/prisma/client.js';
-import { DeliveryStatus, NotificationType, UserStatus } from '../../../generated/prisma/enums.js';
-import { TokenService } from '../../auth/services/token.service.js';
+import { ClientApp, DeliveryStatus, NotificationType, UserStatus } from '../../../generated/prisma/enums.js';
 import { NotificationsService } from '../../notifications/notifications.service.js';
 import { FileUrlService } from '../../uploads/file-url.service.js';
 import { UsersService } from '../../users/users.service.js';
@@ -24,8 +23,9 @@ const listSelect = {
   userId: true,
   fullName: true,
   avatarFileId: true,
+  suspendedAt: true,
   createdAt: true,
-  user: { select: { phone: true, status: true } },
+  user: { select: { phone: true, status: true, driverProfile: { select: { id: true, deletedAt: true } } } },
   _count: { select: { deliveries: { where: { status: { not: DeliveryStatus.DRAFT } } } } },
   deliveries: {
     where: { status: { not: DeliveryStatus.DRAFT } },
@@ -36,10 +36,19 @@ const listSelect = {
 } as const;
 
 /**
+ * A customer's standing as the back office shows it: SUSPENDED while an
+ * operator has stopped them booking, otherwise the account's own status.
+ * Shared with the export, so the file and the screen never disagree.
+ */
+export function customerStatus(profile: { suspendedAt: Date | null }, accountStatus: UserStatus): UserStatus {
+  return profile.suspendedAt ? UserStatus.SUSPENDED : accountStatus;
+}
+
+/**
  * Customer accounts, for support.
  *
  * Deliberately read-mostly: an operator can see who someone is and stop them
- * using the platform, but cannot edit their profile or their saved addresses.
+ * booking, but cannot edit their profile or their saved addresses.
  * Correcting a customer's own data on their behalf is how support desks end up
  * accountable for changes nobody can explain.
  */
@@ -50,7 +59,6 @@ export class AdminCustomersService {
     private readonly notifications: NotificationsService,
     private readonly fileUrls: FileUrlService,
     private readonly users: UsersService,
-    private readonly tokens: TokenService,
     private readonly audit: AuditService,
   ) {}
 
@@ -83,8 +91,15 @@ export class AdminCustomersService {
       where: { id: customerId },
       select: {
         ...listSelect,
+        suspendedReason: true,
         user: {
-          select: { phone: true, email: true, status: true, suspendedReason: true, lastLoginAt: true },
+          select: {
+            phone: true,
+            email: true,
+            status: true,
+            lastLoginAt: true,
+            driverProfile: { select: { id: true, deletedAt: true } },
+          },
         },
         addresses: {
           where: { deletedAt: null },
@@ -140,12 +155,13 @@ export class AdminCustomersService {
       fullName: customer.fullName,
       phone: customer.user.phone,
       avatarUrl: customer.avatarFileId ? (avatars.get(customer.avatarFileId) ?? null) : null,
-      status: customer.user.status,
+      status: customerStatus(customer, customer.user.status),
+      driverId: this.driverIdOf(customer.user),
       deliveryCount: bookings,
       lastOrderedAt: latest?.createdAt.toISOString() ?? null,
       joinedAt: customer.createdAt.toISOString(),
       email: customer.user.email,
-      suspendedReason: customer.user.suspendedReason,
+      suspendedReason: customer.suspendedReason,
       lastLoginAt: customer.user.lastLoginAt?.toISOString() ?? null,
       deliveredCount: countOf(DeliveryStatus.DELIVERED),
       cancelledCount: countOf(DeliveryStatus.CANCELLED),
@@ -168,7 +184,11 @@ export class AdminCustomersService {
   }
 
   /**
-   * Stops a customer signing in or booking.
+   * Stops a customer booking — the booking side only.
+   *
+   * One account serves both apps, so the account itself stays open: the person
+   * can still sign in, and if they also drive they keep driving and keep
+   * access to what they have earned. That side answers to /admin/drivers.
    *
    * Deliveries already in motion are left alone: the package is on its way,
    * the driver is owed for it, and stopping it would punish everyone except
@@ -182,23 +202,25 @@ export class AdminCustomersService {
   ): Promise<AdminCustomerDetailDto> {
     const customer = await this.load(customerId);
 
-    if (customer.user.status === UserStatus.SUSPENDED) {
+    if (customer.suspendedAt) {
       throw AppException.conflict(ResponseCode.ACCOUNT_SUSPENDED, 'This customer is already suspended.');
     }
 
-    await this.prisma.user.update({
-      where: { id: customer.userId },
-      data: { status: UserStatus.SUSPENDED, suspendedReason: dto.reason },
+    await this.prisma.customerProfile.update({
+      where: { id: customerId },
+      data: { suspendedAt: new Date(), suspendedReason: dto.reason },
     });
 
-    await this.tokens.revokeAllSessions(customer.userId);
+    // The suspension travels on the cached principal; without this their next
+    // booking would still go through until the cache expired.
     await this.users.invalidateAuthContext(customer.userId);
 
     await this.notifications.create({
       userId: customer.userId,
       type: NotificationType.ACCOUNT_STATUS_CHANGED,
-      title: 'Your account is suspended',
+      title: 'You can no longer book deliveries',
       body: dto.reason,
+      app: ClientApp.CUSTOMER,
     });
 
     await this.audit.record({
@@ -207,8 +229,8 @@ export class AdminCustomersService {
       entityType: 'CustomerProfile',
       entityId: customerId,
       summary: `Suspended ${customer.fullName}: ${dto.reason}`,
-      before: { status: customer.user.status },
-      after: { status: UserStatus.SUSPENDED, reason: dto.reason },
+      before: { suspended: false },
+      after: { suspended: true, reason: dto.reason },
     });
 
     return this.findOne(customerId);
@@ -217,13 +239,13 @@ export class AdminCustomersService {
   async reinstate(actorUserId: string, customerId: string): Promise<AdminCustomerDetailDto> {
     const customer = await this.load(customerId);
 
-    if (customer.user.status !== UserStatus.SUSPENDED) {
+    if (!customer.suspendedAt) {
       throw AppException.conflict(ResponseCode.CUSTOMER_NOT_SUSPENDED);
     }
 
-    await this.prisma.user.update({
-      where: { id: customer.userId },
-      data: { status: UserStatus.ACTIVE, suspendedReason: null },
+    await this.prisma.customerProfile.update({
+      where: { id: customerId },
+      data: { suspendedAt: null, suspendedReason: null },
     });
 
     await this.users.invalidateAuthContext(customer.userId);
@@ -231,8 +253,9 @@ export class AdminCustomersService {
     await this.notifications.create({
       userId: customer.userId,
       type: NotificationType.ACCOUNT_STATUS_CHANGED,
-      title: 'Your account is active again',
-      body: 'You can sign in and book deliveries.',
+      title: 'You can book deliveries again',
+      body: 'The suspension on your bookings has been lifted.',
+      app: ClientApp.CUSTOMER,
     });
 
     await this.audit.record({
@@ -241,8 +264,8 @@ export class AdminCustomersService {
       entityType: 'CustomerProfile',
       entityId: customerId,
       summary: `Reinstated ${customer.fullName}`,
-      before: { status: UserStatus.SUSPENDED },
-      after: { status: UserStatus.ACTIVE },
+      before: { suspended: true },
+      after: { suspended: false },
     });
 
     return this.findOne(customerId);
@@ -253,7 +276,7 @@ export class AdminCustomersService {
   private async load(customerId: string) {
     const customer = await this.prisma.customerProfile.findUnique({
       where: { id: customerId },
-      select: { id: true, userId: true, fullName: true, user: { select: { status: true } } },
+      select: { id: true, userId: true, fullName: true, suspendedAt: true },
     });
 
     if (!customer) throw AppException.notFound(ResponseCode.CUSTOMER_NOT_FOUND);
@@ -263,10 +286,17 @@ export class AdminCustomersService {
   /** Exposed so an export covers exactly the rows the screen is showing. */
   buildWhere(query: AdminCustomerQueryDto): Prisma.CustomerProfileWhereInput {
     return {
-      user: {
-        deletedAt: null,
-        ...(query.status?.length ? { status: { in: query.status } } : {}),
-      },
+      user: { deletedAt: null },
+      ...(query.status?.length ? { AND: [{ OR: query.status.map((status) => this.statusFilter(status)) }] } : {}),
+      // Every driver holds a customer profile, so "customers" alone is
+      // everyone; this narrows it to the people who have actually booked.
+      ...(query.hasOrdered === undefined
+        ? {}
+        : {
+            deliveries: query.hasOrdered
+              ? { some: { status: { not: DeliveryStatus.DRAFT } } }
+              : { none: { status: { not: DeliveryStatus.DRAFT } } },
+          }),
       ...(query.dateFrom || query.dateTo
         ? {
             createdAt: {
@@ -286,6 +316,18 @@ export class AdminCustomersService {
     };
   }
 
+  /** The inverse of `customerStatus`, so the filter and the badge always agree. */
+  private statusFilter(status: UserStatus): Prisma.CustomerProfileWhereInput {
+    return status === UserStatus.SUSPENDED
+      ? { OR: [{ suspendedAt: { not: null } }, { user: { status } }] }
+      : { suspendedAt: null, user: { status } };
+  }
+
+  /** The driver side of the same account, while it exists. */
+  private driverIdOf(user: { driverProfile: { id: string; deletedAt: Date | null } | null }): string | null {
+    return user.driverProfile && !user.driverProfile.deletedAt ? user.driverProfile.id : null;
+  }
+
   private toRow(
     row: Prisma.CustomerProfileGetPayload<{ select: typeof listSelect }>,
     avatars: Map<string, string>,
@@ -296,7 +338,8 @@ export class AdminCustomersService {
       fullName: row.fullName,
       phone: row.user.phone,
       avatarUrl: row.avatarFileId ? (avatars.get(row.avatarFileId) ?? null) : null,
-      status: row.user.status,
+      status: customerStatus(row, row.user.status),
+      driverId: this.driverIdOf(row.user),
       deliveryCount: row._count.deliveries,
       lastOrderedAt: row.deliveries[0]?.createdAt.toISOString() ?? null,
       joinedAt: row.createdAt.toISOString(),

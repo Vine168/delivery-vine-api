@@ -119,6 +119,7 @@ export class DeliveryMatchingService {
         status: true,
         bookingCode: true,
         customerId: true,
+        customer: { select: { userId: true } },
         pickupLatitude: true,
         pickupLongitude: true,
         driverEarningAmount: true,
@@ -150,7 +151,7 @@ export class DeliveryMatchingService {
 
       const eligible = await this.filterEligible(
         deliveryId,
-        delivery.customerId,
+        { id: delivery.customerId, userId: delivery.customer.userId },
         nearby.map((driver) => driver.driverId),
       );
 
@@ -328,7 +329,7 @@ export class DeliveryMatchingService {
    */
   private async filterEligible(
     deliveryId: string,
-    customerId: string,
+    customer: { id: string; userId: string },
     driverIds: string[],
   ): Promise<{ candidates: string[]; favouriteDriverIds: Set<string> }> {
     const [alreadyOffered, approved, busyFlags, favourites] = await Promise.all([
@@ -349,6 +350,10 @@ export class DeliveryMatchingService {
       this.prisma.driverProfile.findMany({
         where: {
           id: { in: driverIds },
+          // Never the booker's own driver profile. One account can both order
+          // and drive, and taking your own booking is how promo money and
+          // ratings get farmed.
+          userId: { not: customer.userId },
           deletedAt: null,
           approvalStatus: DriverApprovalStatus.ACTIVE,
           availability: { status: DriverAvailabilityStatus.ONLINE },
@@ -358,7 +363,7 @@ export class DeliveryMatchingService {
       }),
       Promise.all(driverIds.map((driverId) => this.presence.isBusy(driverId))),
       this.prisma.favoriteDriver.findMany({
-        where: { customerId, driverId: { in: driverIds } },
+        where: { customerId: customer.id, driverId: { in: driverIds } },
         select: { driverId: true },
       }),
     ]);

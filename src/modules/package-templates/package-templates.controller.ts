@@ -3,21 +3,20 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { ApiErrorResponses, ApiSuccessResponse } from '../../common/decorators/api-docs.decorator.js';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
 import { ResponseCode as ResponseCodeMeta } from '../../common/decorators/response-code.decorator.js';
-import { Roles } from '../../common/decorators/roles.decorator.js';
 import { ResponseCode } from '../../common/constants/response-codes.js';
 import { IdParamDto } from '../../common/dto/id-param.dto.js';
 import type { AuthenticatedUser } from '../../common/interfaces/authenticated-user.interface.js';
-import { UserRole } from '../../generated/prisma/enums.js';
 import {
   CreatePackageTemplateDto,
   PackageTemplateDto,
   UpdatePackageTemplateDto,
 } from './dto/package-template.dto.js';
 import { PackageTemplatesService } from './package-templates.service.js';
+import { RequiresCustomer } from '../../common/decorators/capability.decorator.js';
 
 @ApiTags('Customer Delivery')
 @ApiBearerAuth()
-@Roles(UserRole.CUSTOMER)
+@RequiresCustomer()
 @Controller({ path: 'mobile/customer/package-templates', version: '1' })
 export class PackageTemplatesController {
   constructor(private readonly templates: PackageTemplatesService) {}

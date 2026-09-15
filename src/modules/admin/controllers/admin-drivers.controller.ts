@@ -12,7 +12,12 @@ import {
   Res,
 } from '@nestjs/common';
 import type { Response } from 'express';
-import { ApiOkResponse, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
+import {
+  ApiOkResponse,
+  ApiOperation,
+  ApiParam,
+  ApiTags,
+} from '@nestjs/swagger';
 import {
   ApiErrorResponses,
   ApiPaginatedResponse,
@@ -30,8 +35,10 @@ import {
   AdminDriverDocumentDto,
   AdminDriverQueryDto,
   AdminDriverRowDto,
+  AdminDriverVehicleDto,
   AdminReasonDto,
   AdminReviewDocumentDto,
+  AdminReviewVehicleDto,
   AdminUpdateDriverDto,
   AdminZoneSummaryDto,
 } from '../dto/admin-driver.dto.js';
@@ -55,14 +62,24 @@ export class AdminDriversController {
     description:
       'Filterable by approval state, availability, zone and vehicle type, and searchable by name, phone or plate. `awaitingReview=true` is the approval queue. `onlineNow` comes from the live presence store, so it says whether the matcher can actually see the driver rather than what the availability table last recorded.',
   })
-  @ApiPaginatedResponse({ code: ResponseCode.ADMIN_DRIVERS_FETCHED, type: AdminDriverRowDto })
-  findAll(@Query() query: AdminDriverQueryDto): Promise<PaginatedResult<AdminDriverRowDto>> {
+  @ApiPaginatedResponse({
+    code: ResponseCode.ADMIN_DRIVERS_FETCHED,
+    type: AdminDriverRowDto,
+  })
+  findAll(
+    @Query() query: AdminDriverQueryDto,
+  ): Promise<PaginatedResult<AdminDriverRowDto>> {
     return this.drivers.findAll(query);
   }
 
   @Get('export')
   @RequirePermissions('drivers.export')
-  @RateLimit({ bucket: 'admin:export', limit: 10, windowSeconds: 300, by: 'user' })
+  @RateLimit({
+    bucket: 'admin:export',
+    limit: 10,
+    windowSeconds: 300,
+    by: 'user',
+  })
   @ApiOperation({
     summary: 'Download the fleet as a spreadsheet',
     description:
@@ -75,7 +92,11 @@ export class AdminDriversController {
     @Query() query: AdminDriverQueryDto,
     @Res() response: Response,
   ): Promise<void> {
-    await this.exports.drivers(userId, this.drivers.buildWhere(query), response);
+    await this.exports.drivers(
+      userId,
+      this.drivers.buildWhere(query),
+      response,
+    );
   }
 
   @Get(':id')
@@ -86,7 +107,10 @@ export class AdminDriversController {
     description:
       'Profile, vehicles, documents with review state, zones, wallet balances per currency, last known position, and the readiness checklist — the same one the driver app shows, so the two can never disagree.',
   })
-  @ApiSuccessResponse({ code: ResponseCode.ADMIN_DRIVER_FETCHED, type: AdminDriverDetailDto })
+  @ApiSuccessResponse({
+    code: ResponseCode.ADMIN_DRIVER_FETCHED,
+    type: AdminDriverDetailDto,
+  })
   @ApiErrorResponses({ status: 404, code: ResponseCode.DRIVER_NOT_FOUND })
   findOne(@Param() params: IdParamDto): Promise<AdminDriverDetailDto> {
     return this.drivers.findOne(params.id);
@@ -98,9 +122,12 @@ export class AdminDriversController {
   @ApiOperation({
     summary: 'Correct a driver’s details',
     description:
-      'Only the display name. Phone numbers are identity here — one phone holds one driver account — so they are changed through account recovery, not by an operator editing a field.',
+      'Only the name. Once a driver is approved this is the only way to change it: it must match the ID they were approved on, so they cannot edit it themselves. Phone numbers are identity here — one phone holds one account — so they are changed through account recovery, not by an operator editing a field.',
   })
-  @ApiSuccessResponse({ code: ResponseCode.DRIVER_UPDATED, type: AdminDriverDetailDto })
+  @ApiSuccessResponse({
+    code: ResponseCode.DRIVER_UPDATED,
+    type: AdminDriverDetailDto,
+  })
   @ApiErrorResponses({ status: 404, code: ResponseCode.DRIVER_NOT_FOUND })
   update(
     @CurrentUser('userId') userId: string,
@@ -119,13 +146,19 @@ export class AdminDriversController {
     description:
       'Refused while any required document is unreviewed or rejected — approving a driver whose licence nobody has read is the mistake this screen exists to prevent. The driver is notified and can go online immediately.',
   })
-  @ApiSuccessResponse({ code: ResponseCode.DRIVER_APPROVED, type: AdminDriverDetailDto })
+  @ApiSuccessResponse({
+    code: ResponseCode.DRIVER_APPROVED,
+    type: AdminDriverDetailDto,
+  })
   @ApiErrorResponses(
     { status: 404, code: ResponseCode.DRIVER_NOT_FOUND },
     { status: 409, code: ResponseCode.DRIVER_ALREADY_APPROVED },
     { status: 422, code: ResponseCode.DRIVER_DOCUMENTS_INCOMPLETE },
   )
-  approve(@CurrentUser('userId') userId: string, @Param() params: IdParamDto): Promise<AdminDriverDetailDto> {
+  approve(
+    @CurrentUser('userId') userId: string,
+    @Param() params: IdParamDto,
+  ): Promise<AdminDriverDetailDto> {
     return this.drivers.approve(userId, params.id);
   }
 
@@ -135,9 +168,13 @@ export class AdminDriversController {
   @ResponseCodeMeta(ResponseCode.DRIVER_REJECTED_DECISION)
   @ApiOperation({
     summary: 'Turn down an application',
-    description: 'The reason is shown to the driver. They are taken out of the matching pool immediately.',
+    description:
+      'The reason is shown to the driver. They are taken out of the matching pool immediately.',
   })
-  @ApiSuccessResponse({ code: ResponseCode.DRIVER_REJECTED_DECISION, type: AdminDriverDetailDto })
+  @ApiSuccessResponse({
+    code: ResponseCode.DRIVER_REJECTED_DECISION,
+    type: AdminDriverDetailDto,
+  })
   @ApiErrorResponses({ status: 404, code: ResponseCode.DRIVER_NOT_FOUND })
   reject(
     @CurrentUser('userId') userId: string,
@@ -156,7 +193,10 @@ export class AdminDriversController {
     description:
       'Takes them out of the matching pool, revokes every open session and blocks login. Refused while they are holding a delivery — the package is physically with them, so the operator reassigns or cancels first.',
   })
-  @ApiSuccessResponse({ code: ResponseCode.DRIVER_SUSPENDED_DECISION, type: AdminDriverDetailDto })
+  @ApiSuccessResponse({
+    code: ResponseCode.DRIVER_SUSPENDED_DECISION,
+    type: AdminDriverDetailDto,
+  })
   @ApiErrorResponses(
     { status: 404, code: ResponseCode.DRIVER_NOT_FOUND },
     { status: 409, code: ResponseCode.DRIVER_HAS_ACTIVE_DELIVERY },
@@ -175,9 +215,13 @@ export class AdminDriversController {
   @ResponseCodeMeta(ResponseCode.DRIVER_REINSTATED)
   @ApiOperation({
     summary: 'Lift a suspension',
-    description: 'The driver can sign in again and go online, subject to the usual readiness checks.',
+    description:
+      'The driver can sign in again and go online, subject to the usual readiness checks.',
   })
-  @ApiSuccessResponse({ code: ResponseCode.DRIVER_REINSTATED, type: AdminDriverDetailDto })
+  @ApiSuccessResponse({
+    code: ResponseCode.DRIVER_REINSTATED,
+    type: AdminDriverDetailDto,
+  })
   @ApiErrorResponses(
     { status: 404, code: ResponseCode.DRIVER_NOT_FOUND },
     { status: 409, code: ResponseCode.DRIVER_NOT_SUSPENDED },
@@ -194,7 +238,8 @@ export class AdminDriversController {
   @ResponseCodeMeta(ResponseCode.DRIVER_DOCUMENTS_FETCHED)
   @ApiOperation({
     summary: 'Documents submitted by a driver',
-    description: 'Each carries a time-limited link to the file, and whether the driver cannot work without it.',
+    description:
+      'Each carries a time-limited link to the file, and whether the driver cannot work without it.',
   })
   @ApiSuccessResponse({
     code: ResponseCode.DRIVER_DOCUMENTS_FETCHED,
@@ -210,7 +255,10 @@ export class AdminDriversController {
   @HttpCode(HttpStatus.OK)
   @RequirePermissions('drivers.approve')
   @ResponseCodeMeta(ResponseCode.DOCUMENT_REVIEWED)
-  @ApiParam({ name: 'documentId', description: 'The document being decided on.' })
+  @ApiParam({
+    name: 'documentId',
+    description: 'The document being decided on.',
+  })
   @ApiOperation({
     summary: 'Accept or refuse one document',
     description:
@@ -232,6 +280,33 @@ export class AdminDriversController {
     @Body() dto: AdminReviewDocumentDto,
   ): Promise<AdminDriverDocumentDto[]> {
     return this.drivers.reviewDocument(userId, driverId, documentId, dto);
+  }
+
+  @Post(':id/vehicles/:vehicleId/review')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermissions('drivers.approve')
+  @ResponseCodeMeta(ResponseCode.DOCUMENT_REVIEWED)
+  @ApiOperation({
+    summary: 'Accept or refuse one registered vehicle',
+    description:
+      'Rejecting a vehicle keeps the driver offline until it is fixed and reviewed again. An approved vehicle is required before the admin can approve the driver.',
+  })
+  @ApiSuccessResponse({
+    code: ResponseCode.DOCUMENT_REVIEWED,
+    type: AdminDriverVehicleDto,
+    isArray: true,
+  })
+  @ApiErrorResponses(
+    { status: 400, code: ResponseCode.VALIDATION_ERROR },
+    { status: 404, code: ResponseCode.DRIVER_VEHICLE_NOT_FOUND },
+  )
+  reviewVehicle(
+    @CurrentUser('userId') userId: string,
+    @Param('id') driverId: string,
+    @Param('vehicleId') vehicleId: string,
+    @Body() dto: AdminReviewVehicleDto,
+  ): Promise<AdminDriverVehicleDto[]> {
+    return this.drivers.reviewVehicle(userId, driverId, vehicleId, dto);
   }
 
   @Put(':id/zones')

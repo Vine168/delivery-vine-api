@@ -26,10 +26,10 @@ export interface OtpChallenge {
   debugCode?: string;
 }
 
+/** Attempts live under their own key, so they can be counted atomically. */
 interface StoredOtp {
   codeHash: string;
   recordId: string;
-  attempts: number;
 }
 
 /**
@@ -73,9 +73,15 @@ export class OtpService {
     const subjectKey = this.subjectKey(input);
     const cooldownKey = RedisKey.otpResendCooldown(input.purpose, subjectKey);
     const hourlyKey = RedisKey.otpHourlyCounter(input.purpose, subjectKey);
+    const otpKey = RedisKey.otpCode(input.purpose, subjectKey);
 
-    const remainingCooldown = await this.redis.ttl(cooldownKey);
-    if (remainingCooldown > 0) {
+    // Claimed up front with NX, not checked now and set after sending: two taps
+    // on "resend" would otherwise both get through and send two different
+    // codes, and the person would type whichever arrived first and be told it
+    // was wrong.
+    const claimed = await this.redis.client.set(cooldownKey, '1', 'EX', cooldownSeconds, 'NX');
+    if (!claimed) {
+      const remainingCooldown = Math.max(await this.redis.ttl(cooldownKey), 1);
       throw AppException.tooManyRequests(
         ResponseCode.OTP_RESEND_TOO_SOON,
         `Please wait ${remainingCooldown} seconds before requesting another code.`,
@@ -110,9 +116,10 @@ export class OtpService {
       select: { id: true },
     });
 
-    const stored: StoredOtp = { codeHash, recordId: record.id, attempts: 0 };
-    await this.redis.setJson(RedisKey.otpCode(input.purpose, subjectKey), stored, ttlSeconds);
-    await this.redis.client.set(cooldownKey, '1', 'EX', cooldownSeconds);
+    const stored: StoredOtp = { codeHash, recordId: record.id };
+    await this.redis.setJson(otpKey, stored, ttlSeconds);
+    // A new code starts with a full budget of attempts.
+    await this.redis.client.del(RedisKey.otpAttempts(input.purpose, subjectKey));
 
     try {
       await this.sender.send({
@@ -122,13 +129,13 @@ export class OtpService {
         ttlSeconds,
       });
     } catch (error) {
-      // The cooldown was set a moment ago to stop someone spamming codes. If
-      // the code never actually left, that cooldown punishes them for our
+      // The cooldown was claimed a moment ago to stop someone spamming codes.
+      // If the code never actually left, that cooldown punishes them for our
       // failure — they would be told to wait for a message that is not coming.
       // So it is released, and the stored code with it, leaving them free to
       // ask again straight away.
       await this.redis.client.del(cooldownKey);
-      await this.redis.client.del(RedisKey.otpCode(input.purpose, subjectKey));
+      await this.redis.client.del(otpKey);
       throw error;
     }
 
@@ -148,31 +155,43 @@ export class OtpService {
   async verify(subject: OtpSubject, code: string): Promise<{ token: string; expiresAt: Date }> {
     const subjectKey = this.subjectKey(subject);
     const otpKey = RedisKey.otpCode(subject.purpose, subjectKey);
+    const attemptsKey = RedisKey.otpAttempts(subject.purpose, subjectKey);
 
     const stored = await this.redis.getJson<StoredOtp>(otpKey);
     if (!stored) {
       throw AppException.badRequest(ResponseCode.OTP_EXPIRED);
     }
 
+    // Counted atomically, before the code is compared, so the cap holds however
+    // many guesses arrive at once. Reading a count and writing it back after
+    // the comparison let every request in a parallel burst see the same count,
+    // and each of them got a guess the cap was meant to refuse.
     const maxAttempts = this.config.get<number>('otp.maxAttempts', 5);
-    const submittedHash = this.hashCode(code, subject);
+    const ttlSeconds = this.config.get<number>('otp.ttlSeconds', 300);
+    const attempt = await this.redis.incrementWithTtl(attemptsKey, ttlSeconds);
 
-    if (!CryptoUtil.safeEqual(submittedHash, stored.codeHash)) {
-      const attempts = stored.attempts + 1;
+    if (attempt > maxAttempts) {
+      await this.redis.client.del(otpKey, attemptsKey);
+      throw AppException.badRequest(ResponseCode.OTP_MAX_ATTEMPTS_REACHED);
+    }
 
-      if (attempts >= maxAttempts) {
-        await this.redis.client.del(otpKey);
-        await this.recordAttempts(stored.recordId, attempts);
+    if (!CryptoUtil.safeEqual(this.hashCode(code, subject), stored.codeHash)) {
+      await this.recordAttempts(stored.recordId, attempt);
+
+      if (attempt === maxAttempts) {
+        await this.redis.client.del(otpKey, attemptsKey);
         throw AppException.badRequest(ResponseCode.OTP_MAX_ATTEMPTS_REACHED);
       }
-
-      const remainingTtl = await this.redis.ttl(otpKey);
-      await this.redis.setJson(otpKey, { ...stored, attempts }, remainingTtl > 0 ? remainingTtl : 60);
-      await this.recordAttempts(stored.recordId, attempts);
       throw AppException.badRequest(ResponseCode.OTP_INVALID);
     }
 
-    await this.redis.client.del(otpKey);
+    // Only the request that actually removes the code gets a token, so the
+    // right code sent twice at once is still spent once.
+    const consumed = await this.redis.client.del(otpKey);
+    if (consumed === 0) {
+      throw AppException.badRequest(ResponseCode.OTP_EXPIRED);
+    }
+    await this.redis.client.del(attemptsKey);
 
     const tokenTtl = this.config.get<number>('otp.verificationTokenTtlSeconds', 900);
     const token = CryptoUtil.randomToken(32);
@@ -189,7 +208,8 @@ export class OtpService {
       where: { id: stored.recordId },
       data: {
         verifiedAt: new Date(),
-        attempts: stored.attempts,
+        // Failed attempts before this one, as the column has always recorded.
+        attempts: attempt - 1,
         verificationTokenHash: tokenHash,
         verificationExpiresAt: expiresAt,
       },

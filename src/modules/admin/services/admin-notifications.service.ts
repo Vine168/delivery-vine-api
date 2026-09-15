@@ -11,9 +11,9 @@ import type { Prisma } from '../../../generated/prisma/client.js';
 import {
   CampaignAudience,
   CampaignStatus,
+  ClientApp,
   DriverApprovalStatus,
   NotificationType,
-  UserRole,
   UserStatus,
 } from '../../../generated/prisma/enums.js';
 import { DriverPresenceService } from '../../driver-presence/driver-presence.service.js';
@@ -58,6 +58,20 @@ export interface CampaignJob {
  */
 const PROGRESS_BATCH = 50;
 
+/**
+ * Which app a campaign lands in. Driver audiences are reached in the driver
+ * app and customers in the customer app: every driver holds a customer
+ * profile too, so without this a discount on ordering would pop up over a
+ * driver's job screen. Named people get it in both.
+ */
+const CAMPAIGN_APP: Partial<Record<CampaignAudience, ClientApp>> = {
+  [CampaignAudience.ALL_CUSTOMERS]: ClientApp.CUSTOMER,
+  [CampaignAudience.ALL_DRIVERS]: ClientApp.DRIVER,
+  [CampaignAudience.APPROVED_DRIVERS]: ClientApp.DRIVER,
+  [CampaignAudience.ONLINE_DRIVERS]: ClientApp.DRIVER,
+  [CampaignAudience.DRIVERS_IN_ZONE]: ClientApp.DRIVER,
+};
+
 const campaignJobId = (campaignId: string): string => `campaign-${campaignId}`;
 
 /**
@@ -94,11 +108,17 @@ export class AdminNotificationsService {
   async preview(dto: AdminAudienceDto): Promise<AdminAudiencePreviewDto> {
     const userIds = await this.resolveAudience(dto);
 
+    const app = CAMPAIGN_APP[dto.audience];
     const reachable =
       userIds.length === 0
         ? 0
         : await this.prisma.device.count({
-            where: { userId: { in: userIds }, pushTokens: { some: { isActive: true } } },
+            where: {
+              userId: { in: userIds },
+              pushTokens: { some: { isActive: true } },
+              // Only the devices the campaign will actually land on.
+              ...(app ? { OR: [{ app }, { app: null }] } : {}),
+            },
           });
 
     return {
@@ -200,6 +220,7 @@ export class AdminNotificationsService {
             type: campaign.type,
             title: campaign.title,
             body: campaign.body,
+            app: CAMPAIGN_APP[campaign.audience] ?? null,
             data: {
               campaignId,
               ...((campaign.data as Record<string, unknown> | null) ?? {}),
@@ -412,22 +433,29 @@ export class AdminNotificationsService {
    */
   async resolveAudience(dto: AdminAudienceDto): Promise<string[]> {
     switch (dto.audience) {
+      /*
+       * Audiences are the profiles an account holds, not its role.
+       *
+       * A mobile account is one login for both apps, so `role` no longer
+       * separates a customer from a driver — filtering on it would send every
+       * driver campaign to nobody. Note that a driver holds a customer profile
+       * too, and so is reached by ALL_CUSTOMERS: they order deliveries like
+       * anyone else, and a discount on ordering applies to them.
+       */
       case CampaignAudience.ALL_CUSTOMERS:
-        return this.userIds({ role: UserRole.CUSTOMER });
+        return this.userIds({ customerProfile: { isNot: null } });
 
       case CampaignAudience.ALL_DRIVERS:
-        return this.userIds({ role: UserRole.DRIVER });
+        return this.userIds({ driverProfile: { is: { deletedAt: null } } });
 
       case CampaignAudience.APPROVED_DRIVERS:
         return this.userIds({
-          role: UserRole.DRIVER,
-          driverProfile: { approvalStatus: DriverApprovalStatus.ACTIVE, deletedAt: null },
+          driverProfile: { is: { approvalStatus: DriverApprovalStatus.ACTIVE, deletedAt: null } },
         });
 
       case CampaignAudience.DRIVERS_IN_ZONE:
         return this.userIds({
-          role: UserRole.DRIVER,
-          driverProfile: { deletedAt: null, zones: { some: { zoneId: dto.zoneId } } },
+          driverProfile: { is: { deletedAt: null, zones: { some: { zoneId: dto.zoneId } } } },
         });
 
       case CampaignAudience.ONLINE_DRIVERS:

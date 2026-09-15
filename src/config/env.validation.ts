@@ -236,6 +236,12 @@ export class EnvironmentVariables {
   @IsOptional()
   AUTH_REFRESH_REQUIRE_DEVICE = false;
 
+  /** Refuse a money action that carries no password confirmation at all. */
+  @toBool()
+  @IsBoolean()
+  @IsOptional()
+  AUTH_STEP_UP_REQUIRED = false;
+
   // ── SMS gateway (PlasGate) ──
   // All optional: with none of them set, OTP codes go to the log as before.
   @IsString()

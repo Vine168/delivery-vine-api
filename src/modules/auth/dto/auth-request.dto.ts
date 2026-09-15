@@ -1,8 +1,10 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
 import {
+  IsBoolean,
   IsEmail,
   IsEnum,
+  IsIn,
   IsNotEmpty,
   IsOptional,
   IsString,
@@ -11,7 +13,7 @@ import {
   MinLength,
   ValidateNested,
 } from 'class-validator';
-import { DevicePlatform, OtpChannel, OtpPurpose, UserRole } from '../../../generated/prisma/enums.js';
+import { ClientApp, DevicePlatform, OtpChannel, OtpPurpose, UserRole } from '../../../generated/prisma/enums.js';
 import { PhoneUtil } from '../../../common/utils/phone.util.js';
 
 /** Normalises to E.164 at the edge so the database only ever sees one shape. */
@@ -20,7 +22,11 @@ const NormalisePhone = () => Transform(({ value }) => (typeof value === 'string'
 const PASSWORD_RULE = /^(?=.*[A-Za-z])(?=.*\d).{8,}$/;
 
 export class DeviceInfoDto {
-  @ApiProperty({ example: 'A1B2C3D4-E5F6-7890-ABCD-EF1234567890' })
+  @ApiProperty({
+    example: 'A1B2C3D4-E5F6-7890-ABCD-EF1234567890',
+    description:
+      'A random id the app generates on first launch and keeps in its own storage. Not the vendor or Android id: two apps from the same developer share those, and the customer and driver apps must be told apart.',
+  })
   @IsString()
   @MaxLength(128)
   installationId: string;
@@ -28,6 +34,15 @@ export class DeviceInfoDto {
   @ApiProperty({ enum: DevicePlatform })
   @IsEnum(DevicePlatform)
   platform: DevicePlatform;
+
+  @ApiPropertyOptional({
+    enum: ClientApp,
+    description:
+      'Which app is signing in. Push notifications, the notification list and live events are split by it; a build that leaves it out is treated as both apps.',
+  })
+  @IsEnum(ClientApp)
+  @IsOptional()
+  app?: ClientApp;
 
   @ApiPropertyOptional({ example: 'iPhone15,3' })
   @IsString()
@@ -80,6 +95,13 @@ export class RegisterCustomerDto {
 
 export class RegisterDriverDto extends RegisterCustomerDto {}
 
+/**
+ * The purposes a code can be sent for: the ones with a flow that spends it.
+ * `LOGIN` and `PHONE_CHANGE` exist in the schema, but nothing accepts their
+ * codes yet, so allowing them would send real SMS that nobody can use.
+ */
+const OTP_PURPOSES: OtpPurpose[] = [OtpPurpose.REGISTRATION, OtpPurpose.PASSWORD_RESET];
+
 export class SendOtpDto {
   @ApiProperty({ example: '012345678', description: 'Phone number, or email when channel is EMAIL.' })
   @IsString()
@@ -91,13 +113,17 @@ export class SendOtpDto {
   @IsEnum(OtpChannel)
   channel: OtpChannel = OtpChannel.SMS;
 
-  @ApiProperty({ enum: OtpPurpose })
-  @IsEnum(OtpPurpose)
+  @ApiProperty({ enum: OTP_PURPOSES })
+  @IsIn(OTP_PURPOSES, { message: 'Purpose must be REGISTRATION or PASSWORD_RESET.' })
   purpose: OtpPurpose;
 
-  @ApiProperty({ enum: UserRole, description: 'Which account the code is for — one phone may hold both.' })
+  @ApiPropertyOptional({
+    enum: UserRole,
+    description: 'Only needed for a back-office account. One mobile account serves both apps, so the mobile apps may omit it.',
+  })
   @IsEnum(UserRole)
-  role: UserRole;
+  @IsOptional()
+  role?: UserRole;
 }
 
 export class ResendOtpDto extends SendOtpDto {}
@@ -147,9 +173,15 @@ export class LoginDto {
   @MaxLength(128)
   password: string;
 
-  @ApiProperty({ enum: UserRole, description: 'The app signing in. Customer app sends CUSTOMER, driver app DRIVER.' })
+  @ApiPropertyOptional({
+    enum: UserRole,
+    default: UserRole.CUSTOMER,
+    description:
+      'Only needed to sign in to a back-office account. One mobile account serves both the customer and driver apps, so the mobile apps may omit this.',
+  })
   @IsEnum(UserRole)
-  role: UserRole;
+  @IsOptional()
+  role?: UserRole;
 
   @ApiPropertyOptional({ type: DeviceInfoDto })
   @ValidateNested()
@@ -184,8 +216,17 @@ export class LogoutDto {
   refreshToken?: string;
 
   @ApiPropertyOptional({ description: 'Revoke every session for this account.', default: false })
+  @IsBoolean()
   @IsOptional()
   allDevices?: boolean;
+}
+
+export class StepUpDto {
+  @ApiProperty({ example: 'Passw0rd!' })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(128)
+  password: string;
 }
 
 export class ForgotPasswordDto {
@@ -194,9 +235,13 @@ export class ForgotPasswordDto {
   @Matches(/^\+\d{8,15}$/, { message: 'Phone number is invalid.' })
   phone: string;
 
-  @ApiProperty({ enum: UserRole })
+  @ApiPropertyOptional({
+    enum: UserRole,
+    description: 'Only needed for a back-office account. One mobile account serves both apps, so the mobile apps may omit it.',
+  })
   @IsEnum(UserRole)
-  role: UserRole;
+  @IsOptional()
+  role?: UserRole;
 }
 
 export class VerifyForgotPasswordDto extends ForgotPasswordDto {

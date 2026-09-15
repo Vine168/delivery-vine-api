@@ -6,7 +6,7 @@ import type { PaginatedResult } from '../../common/interfaces/paginated.interfac
 import { PrismaService } from '../../database/prisma.service.js';
 import { RealtimeEmitter } from '../../gateway/realtime.emitter.js';
 import type { Prisma } from '../../generated/prisma/client.js';
-import { NotificationType, PushDispatchStatus } from '../../generated/prisma/enums.js';
+import { ClientApp, NotificationType, PushDispatchStatus } from '../../generated/prisma/enums.js';
 import { PUSH_SENDER, type PushSender } from './push-sender.interface.js';
 import type {
   ListNotificationsQueryDto,
@@ -22,7 +22,34 @@ export interface CreateNotificationInput {
   body: string;
   data?: Prisma.InputJsonValue;
   deliveryId?: string;
+  /**
+   * Which app shows it. Left out, the type decides (APP_BY_TYPE); null means
+   * both. Pass it for the types that could belong to either side.
+   */
+  app?: ClientApp | null;
 }
+
+/**
+ * Which app each kind of notification belongs to. One account signs in to
+ * both, so without this a driver's payout notice would pop up in the app they
+ * order from. A type left out goes to both: account notices, chat and
+ * announcements concern the person, not one app.
+ */
+const APP_BY_TYPE: Partial<Record<NotificationType, ClientApp>> = {
+  [NotificationType.NEW_JOB_REQUEST]: ClientApp.DRIVER,
+  [NotificationType.JOB_REQUEST_EXPIRED]: ClientApp.DRIVER,
+  [NotificationType.WALLET_CREDITED]: ClientApp.DRIVER,
+  [NotificationType.WITHDRAWAL_STATUS_UPDATED]: ClientApp.DRIVER,
+  [NotificationType.DOCUMENT_REVIEWED]: ClientApp.DRIVER,
+  [NotificationType.DELIVERY_CREATED]: ClientApp.CUSTOMER,
+  [NotificationType.DRIVER_ASSIGNED]: ClientApp.CUSTOMER,
+  [NotificationType.DRIVER_ARRIVED_PICKUP]: ClientApp.CUSTOMER,
+  [NotificationType.PACKAGE_PICKED_UP]: ClientApp.CUSTOMER,
+  [NotificationType.DELIVERY_IN_TRANSIT]: ClientApp.CUSTOMER,
+  [NotificationType.DRIVER_ARRIVED_DROPOFF]: ClientApp.CUSTOMER,
+  [NotificationType.DELIVERY_COMPLETED]: ClientApp.CUSTOMER,
+  [NotificationType.PAYMENT_STATUS_UPDATED]: ClientApp.CUSTOMER,
+};
 
 /** Sent to an open app the instant the notification is written. */
 const NOTIFICATION_EVENT = 'notification.created';
@@ -46,10 +73,13 @@ export class NotificationsService {
   ) {}
 
   async create(input: CreateNotificationInput): Promise<void> {
+    const app = input.app === undefined ? (APP_BY_TYPE[input.type] ?? null) : input.app;
+
     const notification = await this.prisma.notification.create({
       data: {
         userId: input.userId,
         type: input.type,
+        app,
         title: input.title,
         body: input.body,
         data: input.data,
@@ -59,20 +89,31 @@ export class NotificationsService {
     });
 
     // Straight to the app if it is open…
-    this.realtime.toUser(input.userId, NOTIFICATION_EVENT, {
+    this.realtime.toUserApp(input.userId, app, NOTIFICATION_EVENT, {
       ...notification,
       read: false,
       createdAt: notification.createdAt.toISOString(),
     });
 
     // …and to the phone if it is not.
-    await this.dispatch(notification.id, input);
+    await this.dispatch(notification.id, input, app);
   }
 
-  /** Sends to every live token the user has, recording each attempt. */
-  private async dispatch(notificationId: string, input: CreateNotificationInput): Promise<void> {
+  /**
+   * Sends to every live token on the app the notification belongs to,
+   * recording each attempt. A device that never said which app it is still
+   * gets everything, as it always did.
+   */
+  private async dispatch(
+    notificationId: string,
+    input: CreateNotificationInput,
+    app: ClientApp | null,
+  ): Promise<void> {
     const tokens = await this.prisma.devicePushToken.findMany({
-      where: { isActive: true, device: { userId: input.userId } },
+      where: {
+        isActive: true,
+        device: { userId: input.userId, ...(app ? { OR: [{ app }, { app: null }] } : {}) },
+      },
       select: { id: true, token: true, provider: true },
     });
 
@@ -113,8 +154,12 @@ export class NotificationsService {
     }
   }
 
-  async findAll(userId: string, query: ListNotificationsQueryDto): Promise<PaginatedResult<NotificationDto>> {
-    const where = { userId, ...(query.unreadOnly ? { readAt: null } : {}) };
+  async findAll(
+    userId: string,
+    app: ClientApp | undefined,
+    query: ListNotificationsQueryDto,
+  ): Promise<PaginatedResult<NotificationDto>> {
+    const where = { userId, ...this.inboxOf(app), ...(query.unreadOnly ? { readAt: null } : {}) };
 
     const [rows, total] = await Promise.all([
       this.prisma.notification.findMany({
@@ -153,8 +198,8 @@ export class NotificationsService {
     );
   }
 
-  async unreadCount(userId: string): Promise<UnreadCountDto> {
-    return { unread: await this.prisma.notification.count({ where: { userId, readAt: null } }) };
+  async unreadCount(userId: string, app: ClientApp | undefined): Promise<UnreadCountDto> {
+    return { unread: await this.prisma.notification.count({ where: { userId, readAt: null, ...this.inboxOf(app) } }) };
   }
 
   async markRead(userId: string, id: string): Promise<void> {
@@ -172,11 +217,19 @@ export class NotificationsService {
     }
   }
 
-  async markAllRead(userId: string): Promise<void> {
+  async markAllRead(userId: string, app: ClientApp | undefined): Promise<void> {
     await this.prisma.notification.updateMany({
-      where: { userId, readAt: null },
+      where: { userId, readAt: null, ...this.inboxOf(app) },
       data: { readAt: new Date() },
     });
+  }
+
+  /**
+   * One app's inbox: its own notifications and those meant for both. A
+   * session that never said which app it is sees everything, as before.
+   */
+  private inboxOf(app: ClientApp | undefined): Prisma.NotificationWhereInput {
+    return app ? { OR: [{ app }, { app: null }] } : {};
   }
 
   /**
@@ -193,11 +246,13 @@ export class NotificationsService {
         userId,
         installationId: dto.installationId,
         platform: dto.platform,
+        app: dto.app,
         appVersion: dto.appVersion,
         locale: dto.locale,
       },
       update: {
         platform: dto.platform,
+        ...(dto.app ? { app: dto.app } : {}),
         appVersion: dto.appVersion,
         locale: dto.locale,
         lastSeenAt: new Date(),

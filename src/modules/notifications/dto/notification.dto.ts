@@ -2,7 +2,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsBoolean, IsEnum, IsOptional, IsString, MaxLength } from 'class-validator';
 import { Transform } from 'class-transformer';
 import { PageQueryDto } from '../../../common/dto/pagination.dto.js';
-import { DevicePlatform, NotificationType, PushProvider } from '../../../generated/prisma/enums.js';
+import { ClientApp, DevicePlatform, NotificationType, PushProvider } from '../../../generated/prisma/enums.js';
 
 export class ListNotificationsQueryDto extends PageQueryDto {
   @ApiPropertyOptional({ description: 'Only unread notifications.' })
@@ -21,6 +21,15 @@ export class RegisterDeviceDto {
   @ApiProperty({ enum: DevicePlatform })
   @IsEnum(DevicePlatform)
   platform: DevicePlatform;
+
+  @ApiPropertyOptional({
+    enum: ClientApp,
+    description:
+      'Which app this token belongs to, so it is sent only that app’s pushes. Left out, it keeps whatever sign-in recorded — or, for an older build, receives everything.',
+  })
+  @IsEnum(ClientApp)
+  @IsOptional()
+  app?: ClientApp;
 
   @ApiProperty({ description: 'FCM registration token.' })
   @IsString()

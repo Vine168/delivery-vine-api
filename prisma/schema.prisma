@@ -44,6 +44,14 @@ enum DevicePlatform {
   WEB
 }
 
+/// Which of the two mobile apps an installation, session or notification
+/// belongs to. One account signs in to both, so the app — not the account —
+/// decides where a push goes and which inbox shows it.
+enum ClientApp {
+  CUSTOMER
+  DRIVER
+}
+
 enum PushProvider {
   FCM
   APNS
@@ -94,6 +102,7 @@ enum DriverDocumentType {
   DRIVER_LICENSE_FRONT
   DRIVER_LICENSE_BACK
   VEHICLE_REGISTRATION
+  CERTIFICATE_OF_REGISTRY
   VEHICLE_PHOTO
   INSURANCE
   OTHER
@@ -255,6 +264,7 @@ enum NotificationType {
   WALLET_CREDITED
   DOCUMENT_REVIEWED
   ACCOUNT_STATUS_CHANGED
+  NEW_SIGN_IN
   CHAT_MESSAGE
   PROMOTION
   SYSTEM_ANNOUNCEMENT
@@ -275,7 +285,12 @@ enum FileVisibility {
 enum FilePurpose {
   CUSTOMER_AVATAR
   DRIVER_AVATAR
+  /// A driver document with no purpose of its own — and, from builds before
+  /// the split, the three below as well.
   DRIVER_DOCUMENT
+  NATIONAL_ID
+  DRIVING_LICENSE
+  CERTIFICATE_OF_REGISTRY
   VEHICLE_PHOTO
   PACKAGE_PHOTO
   PROOF_OF_DELIVERY
@@ -325,7 +340,9 @@ model User {
   refundsRequested Refund[]                 @relation("RefundRequester")
   refundsSettled   Refund[]                 @relation("RefundSettler")
 
-  /// One phone may hold one CUSTOMER account and one DRIVER account.
+  /// One phone holds one mobile account — both apps sign in to it — and,
+  /// separately, at most one back-office account. `role` no longer takes
+  /// DRIVER: the User_role_not_driver CHECK constraint refuses it.
   @@unique([phone, role])
   @@unique([email, role])
   @@index([status])
@@ -354,14 +371,17 @@ model RefreshToken {
 }
 
 model UserSession {
-  id         String    @id @default(cuid(2))
+  id         String     @id @default(cuid(2))
   userId     String
   deviceId   String?
+  /// The app that signed in. Null for the back office, and for app builds
+  /// from before the apps said which they were — those count as both.
+  app        ClientApp?
   ipAddress  String?
   userAgent  String?
-  createdAt  DateTime  @default(now()) @db.Timestamptz(3)
-  lastSeenAt DateTime  @default(now()) @db.Timestamptz(3)
-  revokedAt  DateTime? @db.Timestamptz(3)
+  createdAt  DateTime   @default(now()) @db.Timestamptz(3)
+  lastSeenAt DateTime   @default(now()) @db.Timestamptz(3)
+  revokedAt  DateTime?  @db.Timestamptz(3)
 
   user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   device        Device?        @relation(fields: [deviceId], references: [id], onDelete: SetNull)
@@ -375,6 +395,9 @@ model Device {
   userId         String
   installationId String
   platform       DevicePlatform
+  /// Which app this installation is. Null for builds from before the apps
+  /// said so; they are sent everything, as before.
+  app            ClientApp?
   model          String?
   osVersion      String?
   appVersion     String?
@@ -456,13 +479,18 @@ model IdempotencyKey {
 // ═══════════════════ CUSTOMER ═══════════════════
 
 model CustomerProfile {
-  id           String    @id @default(cuid(2))
-  userId       String    @unique
-  fullName     String
-  avatarFileId String?
-  dateOfBirth  DateTime? @db.Timestamptz(3)
-  createdAt    DateTime  @default(now()) @db.Timestamptz(3)
-  updatedAt    DateTime  @updatedAt @db.Timestamptz(3)
+  id              String    @id @default(cuid(2))
+  userId          String    @unique
+  fullName        String
+  avatarFileId    String?
+  dateOfBirth     DateTime? @db.Timestamptz(3)
+  /// Set while an operator has stopped this person booking. Not `User.status`:
+  /// that closes the whole account, and one account serves both apps — a
+  /// customer barred from booking keeps driving, and keeps the money earned.
+  suspendedAt     DateTime? @db.Timestamptz(3)
+  suspendedReason String?
+  createdAt       DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime  @updatedAt @db.Timestamptz(3)
 
   user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
   avatarFile       FileAsset?        @relation("CustomerAvatar", fields: [avatarFileId], references: [id], onDelete: SetNull)
@@ -538,6 +566,10 @@ model DriverProfile {
   fullName            String
   avatarFileId        String?
   approvalStatus      DriverApprovalStatus @default(PENDING_APPROVAL)
+  /// When the driver handed the completed application in. Null while they are
+  /// still filling it out, which is what separates a real queue from a list of
+  /// people who merely opened the app.
+  submittedAt         DateTime?            @db.Timestamptz(3)
   approvedAt          DateTime?            @db.Timestamptz(3)
   rejectedReason      String?
   suspendedReason     String?
@@ -653,17 +685,24 @@ model DriverVehicle {
 }
 
 model DriverDocument {
-  id               String               @id @default(cuid(2))
-  driverId         String
-  type             DriverDocumentType
-  fileId           String
-  status           DocumentReviewStatus @default(PENDING)
-  reviewedByUserId String?
-  reviewedAt       DateTime?            @db.Timestamptz(3)
-  reviewNote       String?
-  expiresAt        DateTime?            @db.Timestamptz(3)
-  createdAt        DateTime             @default(now()) @db.Timestamptz(3)
-  updatedAt        DateTime             @updatedAt @db.Timestamptz(3)
+  id                  String               @id @default(cuid(2))
+  driverId            String
+  type                DriverDocumentType
+  fileId              String
+  /// The number printed on the document — the national ID number, say — as
+  /// the driver typed it. Encrypted at rest like a bank account number: the
+  /// operator reviewing it sees it in full, the app only ever the last four.
+  documentNumberEnc   String?
+  documentNumberLast4 String?
+  status              DocumentReviewStatus @default(PENDING)
+  reviewedByUserId    String?
+  reviewedAt          DateTime?            @db.Timestamptz(3)
+  reviewNote          String?
+  /// The expiry date printed on the document, as the driver entered it, kept
+  /// as midnight UTC on that day. Null where none was asked for.
+  expiresAt           DateTime?            @db.Timestamptz(3)
+  createdAt           DateTime             @default(now()) @db.Timestamptz(3)
+  updatedAt           DateTime             @updatedAt @db.Timestamptz(3)
 
   driver     DriverProfile @relation(fields: [driverId], references: [id], onDelete: Cascade)
   file       FileAsset     @relation("DriverDocumentFile", fields: [fileId], references: [id])
@@ -1421,6 +1460,9 @@ model Notification {
   id         String           @id @default(cuid(2))
   userId     String
   type       NotificationType
+  /// The app whose inbox shows it; null for both. Decided by the type unless
+  /// the sender says otherwise.
+  app        ClientApp?
   title      String
   body       String
   data       Json?

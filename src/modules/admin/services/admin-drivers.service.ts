@@ -1,22 +1,28 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { IN_FLIGHT_DELIVERY_STATUSES } from '../../../common/constants/delivery-status.js';
 import { ResponseCode } from '../../../common/constants/response-codes.js';
 import { AppException } from '../../../common/exceptions/app.exception.js';
 import type { PaginatedResult } from '../../../common/interfaces/paginated.interface.js';
+import { CryptoUtil } from '../../../common/utils/crypto.util.js';
 import { PaginationUtil } from '../../../common/utils/pagination.util.js';
 import { PrismaService } from '../../../database/prisma.service.js';
 import type { Prisma } from '../../../generated/prisma/client.js';
 import {
+  ClientApp,
   DocumentReviewStatus,
   DriverApprovalStatus,
   DriverAvailabilityStatus,
   DriverDocumentType,
   NotificationType,
-  UserStatus,
 } from '../../../generated/prisma/enums.js';
 import { TokenService } from '../../auth/services/token.service.js';
 import { DriverPresenceService } from '../../driver-presence/driver-presence.service.js';
-import { DOCUMENT_LABELS, REQUIRED_DRIVER_DOCUMENTS } from '../../drivers/driver.constants.js';
+import {
+  DOCUMENT_LABELS,
+  REQUIRED_DRIVER_DOCUMENTS,
+} from '../../drivers/driver.constants.js';
+import { expiryDay } from '../../drivers/driver-documents.service.js';
 import { DriverReadinessService } from '../../drivers/driver-readiness.service.js';
 import { NotificationsService } from '../../notifications/notifications.service.js';
 import { FileUrlService } from '../../uploads/file-url.service.js';
@@ -29,8 +35,10 @@ import type {
   AdminDriverDocumentDto,
   AdminDriverQueryDto,
   AdminDriverRowDto,
+  AdminDriverVehicleDto,
   AdminReasonDto,
   AdminReviewDocumentDto,
+  AdminReviewVehicleDto,
   AdminUpdateDriverDto,
   AdminZoneSummaryDto,
 } from '../dto/admin-driver.dto.js';
@@ -58,7 +66,9 @@ const listSelect = {
     select: { plateNumber: true, vehicleType: { select: { code: true } } },
   },
   zones: { select: { zone: { select: { id: true, code: true, name: true } } } },
-  _count: { select: { documents: { where: { status: DocumentReviewStatus.PENDING } } } },
+  _count: {
+    select: { documents: { where: { status: DocumentReviewStatus.PENDING } } },
+  },
 } as const;
 
 /**
@@ -74,6 +84,8 @@ const listSelect = {
 @Injectable()
 export class AdminDriversService {
   private readonly logger = new Logger(AdminDriversService.name);
+  /** Decrypts the numbers drivers typed on their documents, for review. */
+  private readonly encryptionKey: string;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -85,9 +97,14 @@ export class AdminDriversService {
     private readonly users: UsersService,
     private readonly tokens: TokenService,
     private readonly audit: AuditService,
-  ) {}
+    config: ConfigService,
+  ) {
+    this.encryptionKey = config.getOrThrow<string>('app.encryptionKey');
+  }
 
-  async findAll(query: AdminDriverQueryDto): Promise<PaginatedResult<AdminDriverRowDto>> {
+  async findAll(
+    query: AdminDriverQueryDto,
+  ): Promise<PaginatedResult<AdminDriverRowDto>> {
     const where = this.buildWhere(query);
 
     const [rows, total] = await Promise.all([
@@ -101,8 +118,12 @@ export class AdminDriversService {
       this.prisma.driverProfile.count({ where }),
     ]);
 
-    const avatars = await this.fileUrls.resolveMany(rows.map((row) => row.avatarFileId));
-    const online = await Promise.all(rows.map((row) => this.presence.isOnline(row.id)));
+    const avatars = await this.fileUrls.resolveMany(
+      rows.map((row) => row.avatarFileId),
+    );
+    const online = await Promise.all(
+      rows.map((row) => this.presence.isOnline(row.id)),
+    );
 
     return PaginationUtil.paginate(
       rows.map((row, index) => this.toRow(row, avatars, online[index])),
@@ -156,11 +177,14 @@ export class AdminDriversService {
             type: true,
             status: true,
             fileId: true,
+            documentNumberEnc: true,
             reviewNote: true,
             reviewedAt: true,
             expiresAt: true,
             createdAt: true,
-            reviewedBy: { select: { adminProfile: { select: { fullName: true } } } },
+            reviewedBy: {
+              select: { adminProfile: { select: { fullName: true } } },
+            },
           },
         },
       },
@@ -168,16 +192,19 @@ export class AdminDriversService {
 
     if (!driver) throw AppException.notFound(ResponseCode.DRIVER_NOT_FOUND);
 
-    const [avatars, readiness, fix, activeDeliveries, documentUrls, isOnline] = await Promise.all([
-      this.fileUrls.resolveMany([driver.avatarFileId]),
-      this.readiness.evaluate(driverId),
-      this.presence.getLocation(driverId),
-      this.prisma.delivery.count({
-        where: { driverId, status: { in: [...IN_FLIGHT_DELIVERY_STATUSES] } },
-      }),
-      this.fileUrls.resolveMany(driver.documents.map((document) => document.fileId)),
-      this.presence.isOnline(driverId),
-    ]);
+    const [avatars, readiness, fix, activeDeliveries, documentUrls, isOnline] =
+      await Promise.all([
+        this.fileUrls.resolveMany([driver.avatarFileId]),
+        this.readiness.evaluate(driverId),
+        this.presence.getLocation(driverId),
+        this.prisma.delivery.count({
+          where: { driverId, status: { in: [...IN_FLIGHT_DELIVERY_STATUSES] } },
+        }),
+        this.fileUrls.resolveMany(
+          driver.documents.map((document) => document.fileId),
+        ),
+        this.presence.isOnline(driverId),
+      ]);
 
     const vehiclePhotos = await this.fileUrls.resolveMany(
       driver.vehicles.map((vehicle) => vehicle.photoFileId),
@@ -201,11 +228,15 @@ export class AdminDriversService {
         model: vehicle.model,
         color: vehicle.color,
         year: vehicle.year,
-        photoUrl: vehicle.photoFileId ? (vehiclePhotos.get(vehicle.photoFileId) ?? null) : null,
+        photoUrl: vehicle.photoFileId
+          ? (vehiclePhotos.get(vehicle.photoFileId) ?? null)
+          : null,
         isPrimary: vehicle.isPrimary,
         status: vehicle.status,
       })),
-      documents: driver.documents.map((document) => this.toDocument(document, documentUrls)),
+      documents: driver.documents.map((document) =>
+        this.toDocument(document, documentUrls),
+      ),
       wallets: driver.user.wallets.map((wallet) => ({
         currency: wallet.currency,
         balance: wallet.balance,
@@ -232,7 +263,10 @@ export class AdminDriversService {
    * exists to prevent, and the readiness check would silently keep them
    * offline anyway, which reads to everyone as a bug.
    */
-  async approve(actorUserId: string, driverId: string): Promise<AdminDriverDetailDto> {
+  async approve(
+    actorUserId: string,
+    driverId: string,
+  ): Promise<AdminDriverDetailDto> {
     const driver = await this.load(driverId);
 
     if (driver.approvalStatus === DriverApprovalStatus.ACTIVE) {
@@ -244,12 +278,69 @@ export class AdminDriversService {
       select: { type: true },
     });
     const approvedTypes = new Set(approved.map((document) => document.type));
-    const missing = REQUIRED_DRIVER_DOCUMENTS.filter((type) => !approvedTypes.has(type));
+    const missing = REQUIRED_DRIVER_DOCUMENTS.filter(
+      (type) => !approvedTypes.has(type),
+    );
 
     if (missing.length > 0) {
       throw AppException.unprocessable(
         ResponseCode.DRIVER_DOCUMENTS_INCOMPLETE,
         `Review these documents first: ${missing.map((type) => DOCUMENT_LABELS[type]).join(', ')}.`,
+      );
+    }
+
+    const [primaryVehicle, bankDetails] = await Promise.all([
+      this.prisma.driverVehicle.findFirst({
+        where: { driverId, isPrimary: true, deletedAt: null },
+        select: { id: true, status: true, photoFileId: true },
+      }),
+      this.prisma.driverPaymentSetting.findUnique({
+        where: { driverId },
+        select: {
+          bankName: true,
+          accountHolderName: true,
+          accountNumberLast4: true,
+        },
+      }),
+    ]);
+
+    if (!driver.avatarFileId) {
+      throw AppException.unprocessable(
+        ResponseCode.DRIVER_AVATAR_REQUIRED,
+        'Upload the driver profile photo before approving this driver.',
+      );
+    }
+
+    if (!primaryVehicle) {
+      throw AppException.unprocessable(
+        ResponseCode.DRIVER_VEHICLE_REQUIRED,
+        'Register and approve a primary vehicle before approving this driver.',
+      );
+    }
+
+    if (!primaryVehicle.photoFileId) {
+      throw AppException.unprocessable(
+        ResponseCode.DRIVER_VEHICLE_PHOTO_REQUIRED,
+        'Upload a vehicle photo before approving this driver.',
+      );
+    }
+
+    if (primaryVehicle.status !== DocumentReviewStatus.APPROVED) {
+      throw AppException.unprocessable(
+        ResponseCode.DRIVER_VEHICLE_NOT_APPROVED,
+        'Approve the driver vehicle before approving the driver.',
+      );
+    }
+
+    if (
+      !bankDetails ||
+      !bankDetails.bankName ||
+      !bankDetails.accountHolderName ||
+      !bankDetails.accountNumberLast4
+    ) {
+      throw AppException.unprocessable(
+        ResponseCode.WITHDRAWAL_SETTINGS_REQUIRED,
+        'Add the driver bank details before approving this driver.',
       );
     }
 
@@ -263,11 +354,9 @@ export class AdminDriversService {
       },
     });
 
-    // An approved driver whose account was suspended alongside can sign in again.
-    await this.prisma.user.update({
-      where: { id: driver.userId },
-      data: { status: UserStatus.ACTIVE, suspendedReason: null },
-    });
+    // The driver side only, as with suspend and reinstate. The account is also
+    // this person's customer login, so approving an application must not lift
+    // a suspension an operator put on the account itself.
     await this.users.invalidateAuthContext(driver.userId);
 
     await this.notify(
@@ -289,15 +378,30 @@ export class AdminDriversService {
     return this.findOne(driverId);
   }
 
-  async reject(actorUserId: string, driverId: string, dto: AdminReasonDto): Promise<AdminDriverDetailDto> {
+  async reject(
+    actorUserId: string,
+    driverId: string,
+    dto: AdminReasonDto,
+  ): Promise<AdminDriverDetailDto> {
     const driver = await this.load(driverId);
+
+    // Rejecting takes them offline and out of the job flow, as suspending does.
+    await this.assertNoDeliveryInFlight(driverId);
 
     await this.prisma.driverProfile.update({
       where: { id: driverId },
-      data: { approvalStatus: DriverApprovalStatus.REJECTED, rejectedReason: dto.reason, approvedAt: null },
+      data: {
+        approvalStatus: DriverApprovalStatus.REJECTED,
+        rejectedReason: dto.reason,
+        approvedAt: null,
+      },
     });
 
     await this.forceOffline(driverId);
+    // The capability gate reads approval from the cached principal, so a
+    // rejection that does not clear it leaves them able to work until the
+    // cache expires.
+    await this.users.invalidateAuthContext(driver.userId);
 
     await this.notify(
       driver.userId,
@@ -312,52 +416,57 @@ export class AdminDriversService {
       entityId: driverId,
       summary: `Rejected ${driver.fullName}: ${dto.reason}`,
       before: { approvalStatus: driver.approvalStatus },
-      after: { approvalStatus: DriverApprovalStatus.REJECTED, reason: dto.reason },
+      after: {
+        approvalStatus: DriverApprovalStatus.REJECTED,
+        reason: dto.reason,
+      },
     });
 
     return this.findOne(driverId);
   }
 
   /**
-   * Stops a driver working, and stops them signing in.
+   * Stops a driver working. The account itself is left alone — it is also
+   * their customer login — so they can still sign in and order.
    *
-   * Refused while they are holding a delivery: the package is physically with
-   * them, and cutting their access would strand a customer's goods with
-   * someone who can no longer open the app. The operator reassigns or cancels
-   * first, which is a decision a person should make deliberately.
+   * Refused while they are holding a delivery, as a rejection is.
    */
-  async suspend(actorUserId: string, driverId: string, dto: AdminReasonDto): Promise<AdminDriverDetailDto> {
+  async suspend(
+    actorUserId: string,
+    driverId: string,
+    dto: AdminReasonDto,
+  ): Promise<AdminDriverDetailDto> {
     const driver = await this.load(driverId);
 
-    const active = await this.prisma.delivery.count({
-      where: { driverId, status: { in: [...IN_FLIGHT_DELIVERY_STATUSES] } },
+    await this.assertNoDeliveryInFlight(driverId);
+
+    /*
+     * Only the driver side is suspended.
+     *
+     * The account is one login for both apps now, so setting `User.status`
+     * here would stop this person ordering a delivery as well — punishing
+     * their customer account for something their driver account did. The
+     * capability gate reads `approvalStatus`, so suspending that is enough to
+     * stop them working.
+     */
+    await this.prisma.driverProfile.update({
+      where: { id: driverId },
+      data: {
+        approvalStatus: DriverApprovalStatus.SUSPENDED,
+        suspendedReason: dto.reason,
+      },
     });
 
-    if (active > 0) {
-      throw AppException.conflict(
-        ResponseCode.DRIVER_HAS_ACTIVE_DELIVERY,
-        `This driver is holding ${active} active ${active === 1 ? 'delivery' : 'deliveries'}. Reassign or cancel ${active === 1 ? 'it' : 'them'} first.`,
-      );
-    }
-
-    await this.prisma.$transaction([
-      this.prisma.driverProfile.update({
-        where: { id: driverId },
-        data: { approvalStatus: DriverApprovalStatus.SUSPENDED, suspendedReason: dto.reason },
-      }),
-      this.prisma.user.update({
-        where: { id: driver.userId },
-        data: { status: UserStatus.SUSPENDED, suspendedReason: dto.reason },
-      }),
-    ]);
-
-    // Out of the matching pool, out of every open session, and out of the
-    // cached principal — all three, or the suspension is only on paper.
+    // Out of the matching pool and out of the cached principal. Sessions stay:
+    // they are the same sessions the person orders with.
     await this.forceOffline(driverId);
-    await this.tokens.revokeAllSessions(driver.userId);
     await this.users.invalidateAuthContext(driver.userId);
 
-    await this.notify(driver.userId, 'Your driver account is suspended', dto.reason);
+    await this.notify(
+      driver.userId,
+      'Your driver account is suspended',
+      dto.reason,
+    );
 
     await this.audit.record({
       actorUserId,
@@ -365,14 +474,17 @@ export class AdminDriversService {
       entityType: 'DriverProfile',
       entityId: driverId,
       summary: `Suspended ${driver.fullName}: ${dto.reason}`,
-      before: { approvalStatus: driver.approvalStatus, accountStatus: driver.user.status },
-      after: { approvalStatus: DriverApprovalStatus.SUSPENDED, accountStatus: UserStatus.SUSPENDED },
+      before: { approvalStatus: driver.approvalStatus },
+      after: { approvalStatus: DriverApprovalStatus.SUSPENDED },
     });
 
     return this.findOne(driverId);
   }
 
-  async reinstate(actorUserId: string, driverId: string): Promise<AdminDriverDetailDto> {
+  async reinstate(
+    actorUserId: string,
+    driverId: string,
+  ): Promise<AdminDriverDetailDto> {
     const driver = await this.load(driverId);
 
     if (driver.approvalStatus !== DriverApprovalStatus.SUSPENDED) {
@@ -382,16 +494,15 @@ export class AdminDriversService {
       );
     }
 
-    await this.prisma.$transaction([
-      this.prisma.driverProfile.update({
-        where: { id: driverId },
-        data: { approvalStatus: DriverApprovalStatus.ACTIVE, suspendedReason: null },
-      }),
-      this.prisma.user.update({
-        where: { id: driver.userId },
-        data: { status: UserStatus.ACTIVE, suspendedReason: null },
-      }),
-    ]);
+    // Mirrors suspend: the driver side only. Lifting a driver suspension must
+    // not quietly lift a separate suspension of the account itself.
+    await this.prisma.driverProfile.update({
+      where: { id: driverId },
+      data: {
+        approvalStatus: DriverApprovalStatus.ACTIVE,
+        suspendedReason: null,
+      },
+    });
 
     await this.users.invalidateAuthContext(driver.userId);
 
@@ -454,16 +565,62 @@ export class AdminDriversService {
         type: true,
         status: true,
         fileId: true,
+        documentNumberEnc: true,
         reviewNote: true,
         reviewedAt: true,
         expiresAt: true,
         createdAt: true,
-        reviewedBy: { select: { adminProfile: { select: { fullName: true } } } },
+        reviewedBy: {
+          select: { adminProfile: { select: { fullName: true } } },
+        },
       },
     });
 
-    const urls = await this.fileUrls.resolveMany(documents.map((document) => document.fileId));
+    const urls = await this.fileUrls.resolveMany(
+      documents.map((document) => document.fileId),
+    );
     return documents.map((document) => this.toDocument(document, urls));
+  }
+
+  async vehicles(driverId: string): Promise<AdminDriverVehicleDto[]> {
+    await this.load(driverId);
+
+    const vehicles = await this.prisma.driverVehicle.findMany({
+      where: { driverId, deletedAt: null },
+      orderBy: [{ isPrimary: 'desc' }, { createdAt: 'desc' }],
+      select: {
+        id: true,
+        plateNumber: true,
+        brand: true,
+        model: true,
+        color: true,
+        year: true,
+        photoFileId: true,
+        isPrimary: true,
+        status: true,
+        vehicleType: { select: { code: true, name: true } },
+      },
+    });
+
+    const photos = await this.fileUrls.resolveMany(
+      vehicles.map((vehicle) => vehicle.photoFileId),
+    );
+
+    return vehicles.map((vehicle) => ({
+      id: vehicle.id,
+      vehicleTypeCode: vehicle.vehicleType.code,
+      vehicleTypeName: vehicle.vehicleType.name,
+      plateNumber: vehicle.plateNumber,
+      brand: vehicle.brand,
+      model: vehicle.model,
+      color: vehicle.color,
+      year: vehicle.year,
+      photoUrl: vehicle.photoFileId
+        ? (photos.get(vehicle.photoFileId) ?? null)
+        : null,
+      isPrimary: vehicle.isPrimary,
+      status: vehicle.status,
+    }));
   }
 
   /**
@@ -516,7 +673,10 @@ export class AdminDriversService {
     await this.notifications.create({
       userId: driver.userId,
       type: NotificationType.DOCUMENT_REVIEWED,
-      title: dto.status === DocumentReviewStatus.APPROVED ? `${label} approved` : `${label} rejected`,
+      title:
+        dto.status === DocumentReviewStatus.APPROVED
+          ? `${label} approved`
+          : `${label} rejected`,
       body:
         dto.status === DocumentReviewStatus.APPROVED
           ? 'Your document has been accepted.'
@@ -537,6 +697,80 @@ export class AdminDriversService {
     return this.documents(driverId);
   }
 
+  async reviewVehicle(
+    actorUserId: string,
+    driverId: string,
+    vehicleId: string,
+    dto: AdminReviewVehicleDto,
+  ): Promise<AdminDriverVehicleDto[]> {
+    const driver = await this.load(driverId);
+
+    const vehicle = await this.prisma.driverVehicle.findFirst({
+      where: { id: vehicleId, driverId, deletedAt: null },
+      select: {
+        id: true,
+        status: true,
+        plateNumber: true,
+        brand: true,
+        model: true,
+        color: true,
+        year: true,
+        isPrimary: true,
+        photoFileId: true,
+        vehicleType: { select: { code: true, name: true } },
+      },
+    });
+
+    if (!vehicle)
+      throw AppException.notFound(ResponseCode.DRIVER_VEHICLE_NOT_FOUND);
+
+    if (dto.status === DocumentReviewStatus.REJECTED && !dto.note?.trim()) {
+      throw AppException.badRequest(
+        ResponseCode.VALIDATION_ERROR,
+        'Tell the driver why the vehicle was rejected.',
+      );
+    }
+
+    await this.prisma.driverVehicle.update({
+      where: { id: vehicleId },
+      data: {
+        status: dto.status,
+        reviewNote: dto.note ?? null,
+      },
+    });
+
+    if (dto.status === DocumentReviewStatus.REJECTED) {
+      const readiness = await this.readiness.evaluate(driverId);
+      if (!readiness.canGoOnline) await this.forceOffline(driverId);
+    }
+
+    await this.notifications.create({
+      userId: driver.userId,
+      type: NotificationType.DOCUMENT_REVIEWED,
+      title:
+        dto.status === DocumentReviewStatus.APPROVED
+          ? 'Vehicle approved'
+          : 'Vehicle rejected',
+      body:
+        dto.status === DocumentReviewStatus.APPROVED
+          ? 'Your vehicle registration has been accepted.'
+          : (dto.note as string),
+      data: { vehicleId, status: dto.status },
+    });
+
+    await this.audit.record({
+      actorUserId,
+      action: 'driver.vehicle.review',
+      entityType: 'DriverVehicle',
+      entityId: vehicleId,
+      summary: `${dto.status === DocumentReviewStatus.APPROVED ? 'Approved' : 'Rejected'} vehicle ${vehicle.plateNumber} for ${driver.fullName}`,
+      before: { status: vehicle.status },
+      after: { status: dto.status, note: dto.note ?? null },
+    });
+
+    return this.vehicles(driverId);
+  }
+
   // ── Zones ──────────────────────────────────────────────────────────────
 
   /** Replaces the driver's zone assignments outright. */
@@ -554,7 +788,10 @@ export class AdminDriversService {
     });
 
     if (zones.length !== wanted.length) {
-      throw AppException.notFound(ResponseCode.ZONE_NOT_FOUND, 'One or more zones do not exist.');
+      throw AppException.notFound(
+        ResponseCode.ZONE_NOT_FOUND,
+        'One or more zones do not exist.',
+      );
     }
 
     const before = await this.prisma.driverZone.findMany({
@@ -591,6 +828,7 @@ export class AdminDriversService {
         id: true,
         userId: true,
         fullName: true,
+        avatarFileId: true,
         approvalStatus: true,
         user: { select: { status: true } },
       },
@@ -615,16 +853,45 @@ export class AdminDriversService {
 
     await this.prisma.driverAvailability.updateMany({
       where: { driverId, status: { not: DriverAvailabilityStatus.OFFLINE } },
-      data: { status: DriverAvailabilityStatus.OFFLINE, lastOfflineAt: new Date() },
+      data: {
+        status: DriverAvailabilityStatus.OFFLINE,
+        lastOfflineAt: new Date(),
+      },
     });
   }
 
-  private async notify(userId: string, title: string, body: string): Promise<void> {
+  /**
+   * Refuses while the driver is holding a delivery. Suspending or rejecting
+   * takes them out of the job flow, and the package is physically with them:
+   * cutting their access would strand a customer's goods with someone who can
+   * no longer open the app. The operator reassigns or cancels first, which is
+   * a decision a person should make deliberately.
+   */
+  private async assertNoDeliveryInFlight(driverId: string): Promise<void> {
+    const active = await this.prisma.delivery.count({
+      where: { driverId, status: { in: [...IN_FLIGHT_DELIVERY_STATUSES] } },
+    });
+
+    if (active > 0) {
+      throw AppException.conflict(
+        ResponseCode.DRIVER_HAS_ACTIVE_DELIVERY,
+        `This driver is holding ${active} active ${active === 1 ? 'delivery' : 'deliveries'}. Reassign or cancel ${active === 1 ? 'it' : 'them'} first.`,
+      );
+    }
+  }
+
+  private async notify(
+    userId: string,
+    title: string,
+    body: string,
+  ): Promise<void> {
     await this.notifications.create({
       userId,
       type: NotificationType.ACCOUNT_STATUS_CHANGED,
       title,
       body,
+      // Approval, rejection and suspension concern the driver side only.
+      app: ClientApp.DRIVER,
     });
   }
 
@@ -632,11 +899,23 @@ export class AdminDriversService {
   buildWhere(query: AdminDriverQueryDto): Prisma.DriverProfileWhereInput {
     return {
       deletedAt: null,
-      ...(query.approvalStatus?.length ? { approvalStatus: { in: query.approvalStatus } } : {}),
-      ...(query.availability ? { availability: { status: query.availability } } : {}),
+      ...(query.approvalStatus?.length
+        ? { approvalStatus: { in: query.approvalStatus } }
+        : {}),
+      ...(query.availability
+        ? { availability: { status: query.availability } }
+        : {}),
       ...(query.zoneId ? { zones: { some: { zoneId: query.zoneId } } } : {}),
       ...(query.vehicleTypeId
-        ? { vehicles: { some: { vehicleTypeId: query.vehicleTypeId, isPrimary: true, deletedAt: null } } }
+        ? {
+            vehicles: {
+              some: {
+                vehicleTypeId: query.vehicleTypeId,
+                isPrimary: true,
+                deletedAt: null,
+              },
+            },
+          }
         : {}),
       ...(query.awaitingReview
         ? { documents: { some: { status: DocumentReviewStatus.PENDING } } }
@@ -654,7 +933,16 @@ export class AdminDriversService {
             OR: [
               { fullName: { contains: query.search, mode: 'insensitive' } },
               { user: { phone: { contains: query.search } } },
-              { vehicles: { some: { plateNumber: { contains: query.search, mode: 'insensitive' } } } },
+              {
+                vehicles: {
+                  some: {
+                    plateNumber: {
+                      contains: query.search,
+                      mode: 'insensitive',
+                    },
+                  },
+                },
+              },
             ],
           }
         : {}),
@@ -673,10 +961,13 @@ export class AdminDriversService {
       userId: row.userId,
       fullName: row.fullName,
       phone: row.user.phone,
-      avatarUrl: row.avatarFileId ? (avatars.get(row.avatarFileId) ?? null) : null,
+      avatarUrl: row.avatarFileId
+        ? (avatars.get(row.avatarFileId) ?? null)
+        : null,
       approvalStatus: row.approvalStatus,
       accountStatus: row.user.status,
-      availability: row.availability?.status ?? DriverAvailabilityStatus.OFFLINE,
+      availability:
+        row.availability?.status ?? DriverAvailabilityStatus.OFFLINE,
       onlineNow,
       plateNumber: vehicle?.plateNumber ?? null,
       vehicleTypeCode: vehicle?.vehicleType.code ?? null,
@@ -685,7 +976,9 @@ export class AdminDriversService {
       completedDeliveries: row.completedDeliveries,
       cancelledDeliveries: row.cancelledDeliveries,
       acceptanceRateBps:
-        row.offeredJobs === 0 ? 0 : Math.round((row.acceptedJobs / row.offeredJobs) * 10_000),
+        row.offeredJobs === 0
+          ? 0
+          : Math.round((row.acceptedJobs / row.offeredJobs) * 10_000),
       zones: row.zones.map((assignment) => assignment.zone),
       documentsAwaitingReview: row._count.documents,
       joinedAt: row.createdAt.toISOString(),
@@ -698,6 +991,7 @@ export class AdminDriversService {
       type: DriverDocumentType;
       status: DocumentReviewStatus;
       fileId: string;
+      documentNumberEnc: string | null;
       reviewNote: string | null;
       reviewedAt: Date | null;
       expiresAt: Date | null;
@@ -713,10 +1007,14 @@ export class AdminDriversService {
       status: document.status,
       required: REQUIRED.has(document.type),
       fileUrl: urls.get(document.fileId) ?? null,
+      // In full: the operator's job is to check it against the photo.
+      documentNumber: document.documentNumberEnc
+        ? CryptoUtil.decrypt(document.documentNumberEnc, this.encryptionKey)
+        : null,
       reviewNote: document.reviewNote,
       reviewedByName: document.reviewedBy?.adminProfile?.fullName ?? null,
       reviewedAt: document.reviewedAt?.toISOString() ?? null,
-      expiresAt: document.expiresAt?.toISOString() ?? null,
+      expiresAt: expiryDay(document.expiresAt),
       uploadedAt: document.createdAt.toISOString(),
     };
   }

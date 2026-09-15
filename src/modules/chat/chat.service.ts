@@ -6,7 +6,7 @@ import { PaginationUtil } from '../../common/utils/pagination.util.js';
 import type { CursorPaginatedResult } from '../../common/interfaces/paginated.interface.js';
 import { PrismaService } from '../../database/prisma.service.js';
 import { RealtimeEmitter } from '../../gateway/realtime.emitter.js';
-import { FilePurpose, MessageType } from '../../generated/prisma/enums.js';
+import { ClientApp, FilePurpose, MessageType } from '../../generated/prisma/enums.js';
 import { FileUrlService } from '../uploads/file-url.service.js';
 import { UploadsService } from '../uploads/uploads.service.js';
 import type { AuthenticatedUser } from '../../common/interfaces/authenticated-user.interface.js';
@@ -252,10 +252,13 @@ export class ChatService {
     const dtoOut = this.toDto(message, user.userId, fileUrls);
 
     // Pushed to the other participant's own room, so they receive it wherever
-    // they are in the app rather than only on the chat screen.
+    // they are in the app rather than only on the chat screen — in the app
+    // they work this delivery from: the booker's customer app, the driver's
+    // driver app.
     for (const participant of conversation.participants) {
       if (participant.userId === user.userId) continue;
-      this.realtime.toUser(participant.userId, WsEvent.CHAT_MESSAGE_CREATED, {
+      const app = participant.userId === conversation.customer.userId ? ClientApp.CUSTOMER : ClientApp.DRIVER;
+      this.realtime.toUserApp(participant.userId, app, WsEvent.CHAT_MESSAGE_CREATED, {
         ...dtoOut,
         mine: false,
       });
@@ -269,7 +272,12 @@ export class ChatService {
   private async assertParticipant(user: AuthenticatedUser, conversationId: string) {
     const conversation = await this.prisma.conversation.findFirst({
       where: { id: conversationId, participants: { some: { userId: user.userId } } },
-      select: { id: true, closedAt: true, participants: { select: { userId: true } } },
+      select: {
+        id: true,
+        closedAt: true,
+        participants: { select: { userId: true } },
+        customer: { select: { userId: true } },
+      },
     });
 
     if (!conversation) {

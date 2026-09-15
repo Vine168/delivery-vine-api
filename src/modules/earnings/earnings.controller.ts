@@ -3,11 +3,9 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { ApiErrorResponses, ApiPaginatedResponse, ApiSuccessResponse } from '../../common/decorators/api-docs.decorator.js';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
 import { ResponseCode as ResponseCodeMeta } from '../../common/decorators/response-code.decorator.js';
-import { Roles } from '../../common/decorators/roles.decorator.js';
 import { ResponseCode } from '../../common/constants/response-codes.js';
 import { IdParamDto } from '../../common/dto/id-param.dto.js';
 import type { PaginatedResult } from '../../common/interfaces/paginated.interface.js';
-import { UserRole } from '../../generated/prisma/enums.js';
 import { EarningsService } from './earnings.service.js';
 import {
   EarningDto,
@@ -15,10 +13,11 @@ import {
   EarningsSummaryDto,
   EarningsSummaryQueryDto,
 } from './dto/earning.dto.js';
+import { RequiresDriver } from '../../common/decorators/capability.decorator.js';
 
 @ApiTags('Driver Earnings')
 @ApiBearerAuth()
-@Roles(UserRole.DRIVER)
+@RequiresDriver()
 @Controller({ path: 'mobile/driver/earnings', version: '1' })
 export class EarningsController {
   constructor(private readonly earnings: EarningsService) {}

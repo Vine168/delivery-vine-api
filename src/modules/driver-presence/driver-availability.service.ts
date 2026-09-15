@@ -32,7 +32,10 @@ export class DriverAvailabilityService {
     private readonly events: EventEmitter2,
     config: ConfigService,
   ) {
-    this.trackPointInterval = config.get<number>('delivery.trackPointMinIntervalSeconds', 20);
+    this.trackPointInterval = config.get<number>(
+      'delivery.trackPointMinIntervalSeconds',
+      20,
+    );
   }
 
   async get(driverId: string): Promise<DriverAvailabilityDto> {
@@ -59,18 +62,25 @@ export class DriverAvailabilityService {
    * documents and vehicle every time, so an app that hides the checklist still
    * cannot put an unapproved driver into the matching pool.
    */
-  async set(driverId: string, dto: UpdateAvailabilityDto): Promise<DriverAvailabilityDto> {
+  async set(
+    driverId: string,
+    dto: UpdateAvailabilityDto,
+  ): Promise<DriverAvailabilityDto> {
     return dto.status === DriverAvailabilityInput.ONLINE
       ? this.goOnline(driverId, dto)
       : this.goOffline(driverId);
   }
 
-  private async goOnline(driverId: string, dto: UpdateAvailabilityDto): Promise<DriverAvailabilityDto> {
+  private async goOnline(
+    driverId: string,
+    dto: UpdateAvailabilityDto,
+  ): Promise<DriverAvailabilityDto> {
     const readiness = await this.readiness.evaluate(driverId);
 
     if (!readiness.canGoOnline) {
       throw AppException.unprocessable(
-        (readiness.blockers[0] as ResponseCode) ?? ResponseCode.DRIVER_NOT_APPROVED,
+        (readiness.blockers[0] as ResponseCode) ??
+          ResponseCode.DRIVER_NOT_APPROVED,
         this.explain(readiness.blockers),
       );
     }
@@ -90,7 +100,9 @@ export class DriverAvailabilityService {
       }
 
       if (current?.status !== DriverAvailabilityStatus.ONLINE) {
-        await tx.driverOnlineSession.create({ data: { driverId, startedAt: now } });
+        await tx.driverOnlineSession.create({
+          data: { driverId, startedAt: now },
+        });
       }
 
       return tx.driverAvailability.upsert({
@@ -118,7 +130,10 @@ export class DriverAvailabilityService {
         : undefined,
     );
 
-    this.events.emit(DomainEvent.DRIVER_WENT_ONLINE, { driverId, vehicleTypeCode: vehicle.vehicleType.code });
+    this.events.emit(DomainEvent.DRIVER_WENT_ONLINE, {
+      driverId,
+      vehicleTypeCode: vehicle.vehicleType.code,
+    });
 
     return {
       status: availability.status,
@@ -155,15 +170,25 @@ export class DriverAvailabilityService {
           where: { id: openSession.id },
           data: {
             endedAt: now,
-            durationSeconds: Math.round((now.getTime() - openSession.startedAt.getTime()) / 1000),
+            durationSeconds: Math.round(
+              (now.getTime() - openSession.startedAt.getTime()) / 1000,
+            ),
           },
         });
       }
 
       await tx.driverAvailability.upsert({
         where: { driverId },
-        create: { driverId, status: DriverAvailabilityStatus.OFFLINE, lastOfflineAt: now },
-        update: { status: DriverAvailabilityStatus.OFFLINE, onlineSinceAt: null, lastOfflineAt: now },
+        create: {
+          driverId,
+          status: DriverAvailabilityStatus.OFFLINE,
+          lastOfflineAt: now,
+        },
+        update: {
+          status: DriverAvailabilityStatus.OFFLINE,
+          onlineSinceAt: null,
+          lastOfflineAt: now,
+        },
       });
     });
 
@@ -195,13 +220,19 @@ export class DriverAvailabilityService {
    * once per throttle window, so a busy fleet does not write millions of rows
    * nobody will ever read.
    */
-  async updateLocation(driverId: string, dto: UpdateDriverLocationDto): Promise<DriverLocationAckDto> {
+  async updateLocation(
+    driverId: string,
+    dto: UpdateDriverLocationDto,
+  ): Promise<DriverLocationAckDto> {
     const availability = await this.prisma.driverAvailability.findUnique({
       where: { driverId },
       select: { status: true },
     });
 
-    if (!availability || availability.status === DriverAvailabilityStatus.OFFLINE) {
+    if (
+      !availability ||
+      availability.status === DriverAvailabilityStatus.OFFLINE
+    ) {
       throw AppException.unprocessable(
         ResponseCode.DRIVER_NOT_ONLINE,
         'Go online before sending your location.',
@@ -229,7 +260,12 @@ export class DriverAvailabilityService {
       return { accepted: true, recorded: false, deliveryId: null };
     }
 
-    const recorded = await this.recordTrackPoint(activeDelivery.id, driverId, dto, recordedAt);
+    const recorded = await this.recordTrackPoint(
+      activeDelivery.id,
+      driverId,
+      dto,
+      recordedAt,
+    );
 
     // Announced rather than acted on here: the delivery module decides what a
     // driver moving away from the pickup means. Awaited so the caller's
@@ -253,7 +289,13 @@ export class DriverAvailabilityService {
     recordedAt: Date,
   ): Promise<boolean> {
     const throttleKey = RedisKey.trackPointThrottle(deliveryId);
-    const firstInWindow = await this.redis.client.set(throttleKey, '1', 'EX', this.trackPointInterval, 'NX');
+    const firstInWindow = await this.redis.client.set(
+      throttleKey,
+      '1',
+      'EX',
+      this.trackPointInterval,
+      'NX',
+    );
 
     if (!firstInWindow) return false;
 
@@ -308,11 +350,22 @@ export class DriverAvailabilityService {
 
     await this.prisma.driverAvailability.upsert({
       where: { driverId },
-      create: { driverId, status: busy ? DriverAvailabilityStatus.BUSY : DriverAvailabilityStatus.ONLINE },
-      update: { status: busy ? DriverAvailabilityStatus.BUSY : DriverAvailabilityStatus.ONLINE },
+      create: {
+        driverId,
+        status: busy
+          ? DriverAvailabilityStatus.BUSY
+          : DriverAvailabilityStatus.ONLINE,
+      },
+      update: {
+        status: busy
+          ? DriverAvailabilityStatus.BUSY
+          : DriverAvailabilityStatus.ONLINE,
+      },
     });
 
-    await (busy ? this.presence.markBusy(driverId) : this.presence.markAvailable(driverId));
+    await (busy
+      ? this.presence.markBusy(driverId)
+      : this.presence.markAvailable(driverId));
   }
 
   async onlineSecondsToday(driverId: string): Promise<number> {
@@ -327,7 +380,8 @@ export class DriverAvailabilityService {
     const now = Date.now();
 
     return sessions.reduce((total, session) => {
-      if (session.durationSeconds !== null) return total + session.durationSeconds;
+      if (session.durationSeconds !== null)
+        return total + session.durationSeconds;
       // Still open — count up to now.
       return total + Math.round((now - session.startedAt.getTime()) / 1000);
     }, 0);
@@ -336,7 +390,11 @@ export class DriverAvailabilityService {
   private async primaryVehicleOrThrow(driverId: string) {
     const vehicle = await this.prisma.driverVehicle.findFirst({
       where: { driverId, isPrimary: true, deletedAt: null },
-      select: { id: true, vehicleTypeId: true, vehicleType: { select: { code: true } } },
+      select: {
+        id: true,
+        vehicleTypeId: true,
+        vehicleType: { select: { code: true } },
+      },
     });
 
     if (!vehicle) {
@@ -350,10 +408,20 @@ export class DriverAvailabilityService {
   }
 
   private explain(blockers: string[]): string {
-    if (blockers.includes(ResponseCode.DRIVER_SUSPENDED)) return 'Your account is suspended.';
-    if (blockers.includes(ResponseCode.DRIVER_REJECTED)) return 'Your application was not approved.';
-    if (blockers.includes(ResponseCode.DRIVER_NOT_APPROVED)) return 'Your account is still being reviewed.';
-    if (blockers.includes(ResponseCode.DRIVER_VEHICLE_REQUIRED)) return 'Register a vehicle before going online.';
+    if (blockers.includes(ResponseCode.DRIVER_SUSPENDED))
+      return 'Your account is suspended.';
+    if (blockers.includes(ResponseCode.DRIVER_REJECTED))
+      return 'Your application was not approved.';
+    if (blockers.includes(ResponseCode.DRIVER_NOT_APPROVED))
+      return 'Your account is still being reviewed.';
+    if (blockers.includes(ResponseCode.DRIVER_AVATAR_REQUIRED))
+      return 'Upload your profile photo before going online.';
+    if (blockers.includes(ResponseCode.DRIVER_VEHICLE_REQUIRED))
+      return 'Register a vehicle before going online.';
+    if (blockers.includes(ResponseCode.DRIVER_VEHICLE_PHOTO_REQUIRED))
+      return 'Upload a clear vehicle photo before going online.';
+    if (blockers.includes(ResponseCode.WITHDRAWAL_SETTINGS_REQUIRED))
+      return 'Add your bank details before going online.';
     return 'Upload all required documents and wait for approval before going online.';
   }
 }

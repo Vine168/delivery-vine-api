@@ -45,16 +45,19 @@ export class NearbyDriversQueryDto {
  * address them — just enough to render a moving pin and a vehicle icon.
  */
 export class NearbyDriverDto {
-  @ApiProperty({ example: 11.5581, description: 'Rounded to about 30 m — precise enough for a pin, not for tailing someone.' })
+  @ApiProperty({ example: 11.558, description: 'Rounded to about 110 m — precise enough for a pin, not for tailing someone.' })
   latitude: number;
 
-  @ApiProperty({ example: 104.9264 })
+  @ApiProperty({ example: 104.926 })
   longitude: number;
 
   @ApiProperty({ example: 'MOTOR' })
   vehicleTypeCode: string;
 
-  @ApiProperty({ example: 640, description: 'Straight-line metres from the point you asked about.' })
+  @ApiProperty({
+    example: 640,
+    description: 'Straight-line metres from the point you asked about to the rounded pin — not to the driver.',
+  })
   distanceMeters: number;
 
   @ApiPropertyOptional({ nullable: true, example: 180 })

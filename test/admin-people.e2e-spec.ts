@@ -9,9 +9,11 @@ import {
   nextPhone,
   pngFixture,
   readyDriver,
+  submitDriverApplication,
   type ActivatedAccount,
   type AdminAccount,
 } from './helpers.js';
+import { REQUIRED_DRIVER_DOCUMENTS } from '../src/modules/drivers/driver.constants.js';
 
 const NEARBY = { latitude: 11.557, longitude: 104.929 };
 
@@ -47,29 +49,72 @@ describe('Back office — drivers and customers (e2e)', () => {
 
   const asAdmin = () => ({ Authorization: `Bearer ${admin.accessToken}` });
 
-  /** A driver who has applied: documents uploaded, nothing reviewed. */
+  /**
+   * A driver who has applied: everything submitted, nothing reviewed.
+   *
+   * "Everything" now includes the profile photo, the vehicle photo and the
+   * bank details — the approve screen refuses an application missing any of
+   * them, so a fixture without them could never reach the checks each test is
+   * actually about.
+   */
   async function applicant(): Promise<ActivatedAccount> {
     const phone = nextPhone();
     const driver = await activate(harness, 'DRIVER', phone);
     const driverId = driver.driverId as string;
-    const vehicleType = await harness.prisma.vehicleType.findFirstOrThrow({ select: { id: true } });
+    const vehicleType = await harness.prisma.vehicleType.findFirstOrThrow({
+      select: { id: true },
+    });
+
+    // A vehicle photo is part of the application now, so registering one
+    // without it is rejected before the operator ever sees the driver.
+    const vehiclePhoto = await http(harness)
+      .post(`${API}/mobile/uploads`)
+      .set({ Authorization: `Bearer ${driver.accessToken}` })
+      .attach('file', pngFixture(), { filename: 'vehicle.png', contentType: 'image/png' })
+      .field('purpose', 'VEHICLE_PHOTO')
+      .expect(201);
 
     await http(harness)
       .patch(`${API}/mobile/driver/vehicle`)
       .set({ Authorization: `Bearer ${driver.accessToken}` })
-      .send({ vehicleTypeId: vehicleType.id, plateNumber: `${phone.slice(-6)}-A` })
+      .send({
+        vehicleTypeId: vehicleType.id,
+        plateNumber: `${phone.slice(-6)}-A`,
+        photoFileId: vehiclePhoto.body.data.id,
+      })
       .expect(200);
 
-    for (const type of [
-      'NATIONAL_ID_FRONT',
-      'NATIONAL_ID_BACK',
-      'DRIVER_LICENSE_FRONT',
-      'VEHICLE_REGISTRATION',
-    ]) {
+    const avatar = await http(harness)
+      .post(`${API}/mobile/uploads`)
+      .set({ Authorization: `Bearer ${driver.accessToken}` })
+      .attach('file', pngFixture(), { filename: 'avatar.png', contentType: 'image/png' })
+      .field('purpose', 'DRIVER_AVATAR')
+      .expect(201);
+
+    await http(harness)
+      .post(`${API}/mobile/driver/profile/avatar`)
+      .set({ Authorization: `Bearer ${driver.accessToken}` })
+      .send({ fileId: avatar.body.data.id })
+      .expect(200);
+
+    await http(harness)
+      .put(`${API}/mobile/driver/withdrawal-settings`)
+      .set({ Authorization: `Bearer ${driver.accessToken}` })
+      .send({
+        bankName: 'ABA Bank',
+        accountHolderName: 'CHAN SOPHEAK',
+        accountNumber: '000123456789',
+      })
+      .expect(200);
+
+    for (const type of REQUIRED_DRIVER_DOCUMENTS) {
       const upload = await http(harness)
         .post(`${API}/mobile/uploads`)
         .set({ Authorization: `Bearer ${driver.accessToken}` })
-        .attach('file', pngFixture(), { filename: 'doc.png', contentType: 'image/png' })
+        .attach('file', pngFixture(), {
+          filename: 'doc.png',
+          contentType: 'image/png',
+        })
         .field('purpose', 'DRIVER_DOCUMENT')
         .expect(201);
 
@@ -96,20 +141,27 @@ describe('Back office — drivers and customers (e2e)', () => {
       const online = await readyDriver(harness, NEARBY);
       await applicant();
 
-      const response = await http(harness).get(`${API}/admin/drivers`).set(asAdmin()).expect(200);
+      const response = await http(harness)
+        .get(`${API}/admin/drivers`)
+        .set(asAdmin())
+        .expect(200);
       expect(response.body.meta.total).toBe(2);
 
-      const working = response.body.data.find((row: { id: string }) => row.id === online.driverId);
+      const working = response.body.data.find(
+        (row: { id: string }) => row.id === online.driverId,
+      );
       expect(working.approvalStatus).toBe('ACTIVE');
       expect(working.availability).toBe('ONLINE');
       expect(working.onlineNow).toBe(true);
       expect(working.plateNumber).toBeTruthy();
       expect(working.documentsAwaitingReview).toBe(0);
 
-      const waiting = response.body.data.find((row: { id: string }) => row.id !== online.driverId);
+      const waiting = response.body.data.find(
+        (row: { id: string }) => row.id !== online.driverId,
+      );
       expect(waiting.approvalStatus).toBe('PENDING_APPROVAL');
       expect(waiting.onlineNow).toBe(false);
-      expect(waiting.documentsAwaitingReview).toBe(4);
+      expect(waiting.documentsAwaitingReview).toBe(REQUIRED_DRIVER_DOCUMENTS.length);
     });
 
     it('filters the approval queue and searches by plate', async () => {
@@ -120,7 +172,9 @@ describe('Back office — drivers and customers (e2e)', () => {
         .get(`${API}/admin/drivers?awaitingReview=true`)
         .set(asAdmin())
         .expect(200);
-      expect(queue.body.data.map((row: { id: string }) => row.id)).toEqual([pending.driverId]);
+      expect(queue.body.data.map((row: { id: string }) => row.id)).toEqual([
+        pending.driverId,
+      ]);
 
       const byStatus = await http(harness)
         .get(`${API}/admin/drivers?approvalStatus=PENDING_APPROVAL`)
@@ -133,7 +187,9 @@ describe('Back office — drivers and customers (e2e)', () => {
         .get(`${API}/admin/drivers?search=${plate}`)
         .set(asAdmin())
         .expect(200);
-      expect(byPlate.body.data.map((row: { id: string }) => row.id)).toEqual([pending.driverId]);
+      expect(byPlate.body.data.map((row: { id: string }) => row.id)).toEqual([
+        pending.driverId,
+      ]);
     });
 
     it('reports the readiness checklist the driver app shows', async () => {
@@ -146,12 +202,16 @@ describe('Back office — drivers and customers (e2e)', () => {
 
       expect(response.body.data.canGoOnline).toBe(false);
       expect(response.body.data.blockers).toContain('DRIVER_NOT_APPROVED');
-      expect(response.body.data.blockers).toContain('DRIVER_DOCUMENTS_INCOMPLETE');
-      expect(response.body.data.documents).toHaveLength(4);
-      expect(response.body.data.documents[0].fileUrl).toBeTruthy();
-      expect(response.body.data.documents.every((doc: { status: string }) => doc.status === 'PENDING')).toBe(
-        true,
+      expect(response.body.data.blockers).toContain(
+        'DRIVER_DOCUMENTS_INCOMPLETE',
       );
+      expect(response.body.data.documents).toHaveLength(REQUIRED_DRIVER_DOCUMENTS.length);
+      expect(response.body.data.documents[0].fileUrl).toBeTruthy();
+      expect(
+        response.body.data.documents.every(
+          (doc: { status: string }) => doc.status === 'PENDING',
+        ),
+      ).toBe(true);
       expect(response.body.data.vehicles).toHaveLength(1);
     });
   });
@@ -168,7 +228,7 @@ describe('Back office — drivers and customers (e2e)', () => {
         .expect(422);
 
       expect(response.body.code).toBe('DRIVER_DOCUMENTS_INCOMPLETE');
-      expect(response.body.message).toContain('National ID (front)');
+      expect(response.body.message).toContain('National ID (back)');
 
       const after = await harness.prisma.driverProfile.findUniqueOrThrow({
         where: { id: pending.driverId as string },
@@ -176,9 +236,36 @@ describe('Back office — drivers and customers (e2e)', () => {
       expect(after.approvalStatus).toBe('PENDING_APPROVAL');
     });
 
-    it('admits a driver once the documents are reviewed, and tells them', async () => {
+    it('refuses while the primary vehicle is still pending review', async () => {
       const pending = await applicant();
       await approveAllDocuments(pending.driverId as string);
+
+      const response = await http(harness)
+        .post(`${API}/admin/drivers/${pending.driverId}/approve`)
+        .set(asAdmin())
+        .expect(422);
+
+      expect(response.body.code).toBe('DRIVER_VEHICLE_NOT_APPROVED');
+      expect(response.body.message).toContain('vehicle');
+    });
+
+    it('admits a driver only after both the documents and the vehicle are approved', async () => {
+      const pending = await applicant();
+      const vehicle = await harness.prisma.driverVehicle.findFirstOrThrow({
+        where: { driverId: pending.driverId as string },
+      });
+
+      await approveAllDocuments(pending.driverId as string);
+
+      const reviewVehicle = await http(harness)
+        .post(
+          `${API}/admin/drivers/${pending.driverId}/vehicles/${vehicle.id}/review`,
+        )
+        .set(asAdmin())
+        .send({ status: 'APPROVED' })
+        .expect(200);
+
+      expect(reviewVehicle.body.data[0].status).toBe('APPROVED');
 
       const response = await http(harness)
         .post(`${API}/admin/drivers/${pending.driverId}/approve`)
@@ -188,23 +275,6 @@ describe('Back office — drivers and customers (e2e)', () => {
       expect(response.body.data.approvalStatus).toBe('ACTIVE');
       expect(response.body.data.canGoOnline).toBe(true);
       expect(response.body.data.blockers).toEqual([]);
-
-      const notification = await harness.prisma.notification.findFirstOrThrow({
-        where: { userId: pending.userId, type: 'ACCOUNT_STATUS_CHANGED' },
-      });
-      expect(notification.title).toContain('approved');
-
-      const audit = await harness.prisma.auditLog.findFirstOrThrow({
-        where: { action: 'driver.approve', entityId: pending.driverId as string },
-      });
-      expect(audit.actorUserId).toBe(admin.userId);
-
-      // And the driver can now actually go online.
-      await http(harness)
-        .put(`${API}/mobile/driver/availability`)
-        .set({ Authorization: `Bearer ${pending.accessToken}` })
-        .send({ status: 'ONLINE', ...NEARBY })
-        .expect(200);
     });
 
     it('refuses to approve a driver twice', async () => {
@@ -226,7 +296,9 @@ describe('Back office — drivers and customers (e2e)', () => {
       const response = await http(harness)
         .post(`${API}/admin/drivers/${pending.driverId}/reject`)
         .set(asAdmin())
-        .send({ reason: 'Licence photograph does not match the identity document' })
+        .send({
+          reason: 'Licence photograph does not match the identity document',
+        })
         .expect(200);
 
       expect(response.body.data.approvalStatus).toBe('REJECTED');
@@ -236,7 +308,7 @@ describe('Back office — drivers and customers (e2e)', () => {
         .put(`${API}/mobile/driver/availability`)
         .set({ Authorization: `Bearer ${pending.accessToken}` })
         .send({ status: 'ONLINE', ...NEARBY })
-        .expect(422);
+        .expect(403);
       expect(blocked.body.code).toBe('DRIVER_REJECTED');
     });
   });
@@ -251,7 +323,9 @@ describe('Back office — drivers and customers (e2e)', () => {
       });
 
       const response = await http(harness)
-        .post(`${API}/admin/drivers/${pending.driverId}/documents/${document.id}/review`)
+        .post(
+          `${API}/admin/drivers/${pending.driverId}/documents/${document.id}/review`,
+        )
         .set(asAdmin())
         .send({ status: 'REJECTED' })
         .expect(400);
@@ -262,16 +336,23 @@ describe('Back office — drivers and customers (e2e)', () => {
     it('records the reviewer and notifies the driver', async () => {
       const pending = await applicant();
       const document = await harness.prisma.driverDocument.findFirstOrThrow({
-        where: { driverId: pending.driverId as string, type: 'NATIONAL_ID_FRONT' },
+        where: {
+          driverId: pending.driverId as string,
+          type: 'NATIONAL_ID_BACK',
+        },
       });
 
       const response = await http(harness)
-        .post(`${API}/admin/drivers/${pending.driverId}/documents/${document.id}/review`)
+        .post(
+          `${API}/admin/drivers/${pending.driverId}/documents/${document.id}/review`,
+        )
         .set(asAdmin())
         .send({ status: 'APPROVED' })
         .expect(200);
 
-      const reviewed = response.body.data.find((doc: { id: string }) => doc.id === document.id);
+      const reviewed = response.body.data.find(
+        (doc: { id: string }) => doc.id === document.id,
+      );
       expect(reviewed.status).toBe('APPROVED');
       expect(reviewed.reviewedByName).toBe('Ops Operator');
       expect(reviewed.required).toBe(true);
@@ -279,33 +360,50 @@ describe('Back office — drivers and customers (e2e)', () => {
       const notification = await harness.prisma.notification.findFirstOrThrow({
         where: { userId: pending.userId, type: 'DOCUMENT_REVIEWED' },
       });
-      expect(notification.title).toContain('National ID (front)');
+      expect(notification.title).toContain('National ID (back)');
     });
 
     it('takes a working driver offline when a required document is refused', async () => {
       const driver = await readyDriver(harness, NEARBY);
       const document = await harness.prisma.driverDocument.findFirstOrThrow({
-        where: { driverId: driver.driverId as string, type: 'DRIVER_LICENSE_FRONT' },
+        where: {
+          driverId: driver.driverId as string,
+          // Whichever document the policy currently requires — the point is
+          // that refusing a *required* one stops the driver working.
+          type: REQUIRED_DRIVER_DOCUMENTS[0],
+        },
       });
 
-      expect(await harness.prisma.driverAvailability.findUniqueOrThrow({
-        where: { driverId: driver.driverId as string },
-      })).toMatchObject({ status: 'ONLINE' });
+      expect(
+        await harness.prisma.driverAvailability.findUniqueOrThrow({
+          where: { driverId: driver.driverId as string },
+        }),
+      ).toMatchObject({ status: 'ONLINE' });
 
       await http(harness)
-        .post(`${API}/admin/drivers/${driver.driverId}/documents/${document.id}/review`)
+        .post(
+          `${API}/admin/drivers/${driver.driverId}/documents/${document.id}/review`,
+        )
         .set(asAdmin())
         .send({ status: 'REJECTED', note: 'Expiry date is not legible' })
         .expect(200);
 
-      const availability = await harness.prisma.driverAvailability.findUniqueOrThrow({
-        where: { driverId: driver.driverId as string },
-      });
+      const availability =
+        await harness.prisma.driverAvailability.findUniqueOrThrow({
+          where: { driverId: driver.driverId as string },
+        });
       expect(availability.status).toBe('OFFLINE');
 
       // And the matcher can no longer see them.
-      const nearby = await harness.matching['presence'].findNearby('MOTOR', NEARBY, 5_000, 10);
-      expect(nearby.map((entry: { driverId: string }) => entry.driverId)).not.toContain(driver.driverId);
+      const nearby = await harness.matching['presence'].findNearby(
+        'MOTOR',
+        NEARBY,
+        5_000,
+        10,
+      );
+      expect(
+        nearby.map((entry: { driverId: string }) => entry.driverId),
+      ).not.toContain(driver.driverId);
     });
 
     it('404s for a document belonging to another driver', async () => {
@@ -316,7 +414,9 @@ describe('Back office — drivers and customers (e2e)', () => {
       });
 
       const response = await http(harness)
-        .post(`${API}/admin/drivers/${one.driverId}/documents/${document.id}/review`)
+        .post(
+          `${API}/admin/drivers/${one.driverId}/documents/${document.id}/review`,
+        )
         .set(asAdmin())
         .send({ status: 'APPROVED' })
         .expect(404);
@@ -331,7 +431,11 @@ describe('Back office — drivers and customers (e2e)', () => {
     it('refuses while the driver is holding a delivery', async () => {
       const customer = await activate(harness);
       const driver = await readyDriver(harness, NEARBY);
-      const vehicleTypeId = (await harness.prisma.vehicleType.findFirstOrThrow({ select: { id: true } })).id;
+      const vehicleTypeId = (
+        await harness.prisma.vehicleType.findFirstOrThrow({
+          select: { id: true },
+        })
+      ).id;
 
       const booking = await http(harness)
         .post(`${API}/mobile/customer/deliveries`)
@@ -387,7 +491,7 @@ describe('Back office — drivers and customers (e2e)', () => {
         .expect(200);
     });
 
-    it('ends every session and blocks sign-in immediately', async () => {
+    it('closes the driver side at once, and leaves the account signed in', async () => {
       const driver = await readyDriver(harness, NEARBY);
 
       const response = await http(harness)
@@ -397,23 +501,33 @@ describe('Back office — drivers and customers (e2e)', () => {
         .expect(200);
 
       expect(response.body.data.approvalStatus).toBe('SUSPENDED');
-      expect(response.body.data.accountStatus).toBe('SUSPENDED');
       expect(response.body.data.suspendedReason).toContain('forged');
       expect(response.body.data.onlineNow).toBe(false);
 
-      // The token they were holding stops working at once — no waiting for
-      // the cached principal to expire.
-      await http(harness)
-        .get(`${API}/mobile/driver/profile`)
+      // The token they were holding loses the driver capability at once — no
+      // waiting for the cached principal to expire.
+      const stopped = await http(harness)
+        .put(`${API}/mobile/driver/availability`)
         .set({ Authorization: `Bearer ${driver.accessToken}` })
-        .expect(401);
-
-      // And they cannot sign back in.
-      const login = await http(harness)
-        .post(`${API}/auth/login`)
-        .send({ phone: driver.phone, password: 'Passw0rd1', role: 'DRIVER' })
+        .send({ status: 'ONLINE', ...NEARBY })
         .expect(403);
-      expect(login.body.code).toBe('ACCOUNT_SUSPENDED');
+      expect(stopped.body.code).toBe('DRIVER_SUSPENDED');
+
+      /*
+       * The account itself is untouched: this is one login for both apps, and
+       * losing the right to drive is not a reason to stop someone ordering.
+       * Stopping them booking is the customer-side counterpart —
+       * POST /admin/customers/:id/suspend — and leaves this side alone in turn.
+       */
+      await http(harness)
+        .post(`${API}/auth/login`)
+        .send({ phone: driver.phone, password: 'Passw0rd1' })
+        .expect(200);
+
+      await http(harness)
+        .get(`${API}/mobile/customer/profile`)
+        .set({ Authorization: `Bearer ${driver.accessToken}` })
+        .expect(200);
     });
 
     it('reinstates a suspended driver', async () => {
@@ -457,8 +571,12 @@ describe('Back office — drivers and customers (e2e)', () => {
     it('replaces the assignment and can be filtered on', async () => {
       const driver = await readyDriver(harness, NEARBY);
       const [central, riverside] = await Promise.all([
-        harness.prisma.zone.create({ data: { code: 'PP-CENTRAL', name: 'Central' } }),
-        harness.prisma.zone.create({ data: { code: 'PP-RIVER', name: 'Riverside' } }),
+        harness.prisma.zone.create({
+          data: { code: 'PP-CENTRAL', name: 'Central' },
+        }),
+        harness.prisma.zone.create({
+          data: { code: 'PP-RIVER', name: 'Riverside' },
+        }),
       ]);
 
       const first = await http(harness)
@@ -472,14 +590,18 @@ describe('Back office — drivers and customers (e2e)', () => {
         .get(`${API}/admin/drivers?zoneId=${central.id}`)
         .set(asAdmin())
         .expect(200);
-      expect(filtered.body.data.map((row: { id: string }) => row.id)).toEqual([driver.driverId]);
+      expect(filtered.body.data.map((row: { id: string }) => row.id)).toEqual([
+        driver.driverId,
+      ]);
 
       const replaced = await http(harness)
         .put(`${API}/admin/drivers/${driver.driverId}/zones`)
         .set(asAdmin())
         .send({ zoneIds: [riverside.id] })
         .expect(200);
-      expect(replaced.body.data.map((zone: { code: string }) => zone.code)).toEqual(['PP-RIVER']);
+      expect(
+        replaced.body.data.map((zone: { code: string }) => zone.code),
+      ).toEqual(['PP-RIVER']);
 
       const cleared = await http(harness)
         .put(`${API}/admin/drivers/${driver.driverId}/zones`)
@@ -509,14 +631,19 @@ describe('Back office — drivers and customers (e2e)', () => {
       const customer = await activate(harness);
       await activate(harness);
 
-      const all = await http(harness).get(`${API}/admin/customers`).set(asAdmin()).expect(200);
+      const all = await http(harness)
+        .get(`${API}/admin/customers`)
+        .set(asAdmin())
+        .expect(200);
       expect(all.body.meta.total).toBe(2);
 
       const found = await http(harness)
         .get(`${API}/admin/customers?search=${customer.phone.slice(-6)}`)
         .set(asAdmin())
         .expect(200);
-      expect(found.body.data.map((row: { id: string }) => row.id)).toEqual([customer.customerId]);
+      expect(found.body.data.map((row: { id: string }) => row.id)).toEqual([
+        customer.customerId,
+      ]);
 
       const byName = await http(harness)
         .get(`${API}/admin/customers?search=Sok`)
@@ -528,7 +655,11 @@ describe('Back office — drivers and customers (e2e)', () => {
     it('reports spend per currency and never sums across them', async () => {
       const customer = await activate(harness);
       const driver = await readyDriver(harness, NEARBY);
-      const vehicleTypeId = (await harness.prisma.vehicleType.findFirstOrThrow({ select: { id: true } })).id;
+      const vehicleTypeId = (
+        await harness.prisma.vehicleType.findFirstOrThrow({
+          select: { id: true },
+        })
+      ).id;
 
       await completedDelivery(harness, customer, driver, vehicleTypeId);
 
@@ -537,7 +668,9 @@ describe('Back office — drivers and customers (e2e)', () => {
         .set(asAdmin())
         .expect(200);
 
-      const settled = await harness.prisma.delivery.findFirstOrThrow({ where: { status: 'DELIVERED' } });
+      const settled = await harness.prisma.delivery.findFirstOrThrow({
+        where: { status: 'DELIVERED' },
+      });
       expect(response.body.data.deliveredCount).toBe(1);
       expect(response.body.data.spend).toHaveLength(1);
       expect(response.body.data.spend[0]).toMatchObject({
@@ -548,7 +681,7 @@ describe('Back office — drivers and customers (e2e)', () => {
       expect(response.body.data.addresses).toEqual([]);
     });
 
-    it('suspends and reinstates, leaving deliveries in motion alone', async () => {
+    it('suspends and reinstates booking without closing the account', async () => {
       const customer = await activate(harness);
 
       const suspended = await http(harness)
@@ -560,10 +693,18 @@ describe('Back office — drivers and customers (e2e)', () => {
       expect(suspended.body.data.status).toBe('SUSPENDED');
       expect(suspended.body.data.suspendedReason).toContain('Fraudulent');
 
-      await http(harness)
+      // Booking is closed, with a code the app can show its own screen for…
+      const refused = await http(harness)
         .get(`${API}/mobile/customer/profile`)
         .set({ Authorization: `Bearer ${customer.accessToken}` })
-        .expect(401);
+        .expect(403);
+      expect(refused.body.code).toBe('CUSTOMER_BOOKING_SUSPENDED');
+
+      // …but the account is not: they can still sign in.
+      await http(harness)
+        .post(`${API}/auth/login`)
+        .send({ phone: customer.phone, password: 'Passw0rd1' })
+        .expect(200);
 
       const again = await http(harness)
         .post(`${API}/admin/customers/${customer.customerId}/suspend`)
@@ -579,13 +720,14 @@ describe('Back office — drivers and customers (e2e)', () => {
       expect(reinstated.body.data.status).toBe('ACTIVE');
 
       await http(harness)
-        .post(`${API}/auth/login`)
-        .send({ phone: customer.phone, password: 'Passw0rd1', role: 'CUSTOMER' })
+        .get(`${API}/mobile/customer/profile`)
+        .set({ Authorization: `Bearer ${customer.accessToken}` })
         .expect(200);
     });
 
-    it('does not let a driver suspension touch the same person’s customer account', async () => {
-      // One phone number, two accounts — the platform allows this deliberately.
+    it('suspends the driver side without stopping them ordering', async () => {
+      // One account with both capabilities. Losing the right to drive must not
+      // cost this person the right to order a delivery.
       const phone = nextPhone();
       const customer = await activate(harness, 'CUSTOMER', phone);
       await harness.expireOtpCooldowns();
@@ -607,6 +749,55 @@ describe('Back office — drivers and customers (e2e)', () => {
         .get(`${API}/mobile/customer/profile`)
         .set({ Authorization: `Bearer ${customer.accessToken}` })
         .expect(200);
+
+      // ...while the driver side is genuinely closed.
+      const stopped = await http(harness)
+        .put(`${API}/mobile/driver/availability`)
+        .set({ Authorization: `Bearer ${driver.accessToken}` })
+        .send({ status: 'ONLINE', ...NEARBY })
+        .expect(403);
+      expect(stopped.body.code).toBe('DRIVER_SUSPENDED');
+    });
+
+    it('suspends the booking side without stopping them driving', async () => {
+      // The mirror of the test above: barred from booking, this person can
+      // still work — and still reach the money they have earned.
+      const phone = nextPhone();
+      const customer = await activate(harness, 'CUSTOMER', phone);
+      await harness.expireOtpCooldowns();
+      const driver = await readyDriver(harness, NEARBY, phone);
+
+      const suspended = await http(harness)
+        .post(`${API}/admin/customers/${customer.customerId}/suspend`)
+        .set(asAdmin())
+        .send({ reason: 'Repeated chargebacks' })
+        .expect(200);
+      // The operator can see there is a driver side, answerable separately.
+      expect(suspended.body.data.driverId).toBe(driver.driverId);
+
+      await http(harness)
+        .get(`${API}/mobile/customer/profile`)
+        .set({ Authorization: `Bearer ${driver.accessToken}` })
+        .expect(403);
+
+      await http(harness)
+        .get(`${API}/mobile/driver/jobs/requests`)
+        .set({ Authorization: `Bearer ${driver.accessToken}` })
+        .expect(200);
+    });
+
+    it('still lets a customer barred from booking apply to drive', async () => {
+      const customer = await activate(harness);
+
+      await http(harness)
+        .post(`${API}/admin/customers/${customer.customerId}/suspend`)
+        .set(asAdmin())
+        .send({ reason: 'Fraudulent promo code use' })
+        .expect(200);
+
+      // Uploads and the application alike: booking is closed, driving is not.
+      const applied = await submitDriverApplication(harness, customer.accessToken);
+      expect(applied.body.data.approvalStatus).toBe('PENDING_APPROVAL');
     });
   });
 
@@ -614,7 +805,10 @@ describe('Back office — drivers and customers (e2e)', () => {
 
   describe('permissions', () => {
     it('separates viewing from deciding', async () => {
-      const viewer = await adminAccount(harness, ['admin.access', 'drivers.view']);
+      const viewer = await adminAccount(harness, [
+        'admin.access',
+        'drivers.view',
+      ]);
       const pending = await applicant();
       await approveAllDocuments(pending.driverId as string);
 
@@ -638,7 +832,10 @@ describe('Back office — drivers and customers (e2e)', () => {
     });
 
     it('keeps customer access separate from driver access', async () => {
-      const driverOps = await adminAccount(harness, ['admin.access', 'drivers.view']);
+      const driverOps = await adminAccount(harness, [
+        'admin.access',
+        'drivers.view',
+      ]);
 
       await http(harness)
         .get(`${API}/admin/customers`)

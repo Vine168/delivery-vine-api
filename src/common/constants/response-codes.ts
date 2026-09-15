@@ -36,6 +36,7 @@ export const ResponseCode = {
   PASSWORD_SET: 'PASSWORD_SET',
   PASSWORD_RESET: 'PASSWORD_RESET',
   PASSWORD_CHANGED: 'PASSWORD_CHANGED',
+  STEP_UP_CONFIRMED: 'STEP_UP_CONFIRMED',
   OTP_SENT: 'OTP_SENT',
   OTP_VERIFIED: 'OTP_VERIFIED',
   OTP_RESENT: 'OTP_RESENT',
@@ -45,6 +46,7 @@ export const ResponseCode = {
   ACCOUNT_ALREADY_EXISTS: 'ACCOUNT_ALREADY_EXISTS',
   ACCOUNT_NOT_VERIFIED: 'ACCOUNT_NOT_VERIFIED',
   ACCOUNT_SUSPENDED: 'ACCOUNT_SUSPENDED',
+  STEP_UP_REQUIRED: 'STEP_UP_REQUIRED',
   ACCOUNT_TEMPORARILY_LOCKED: 'ACCOUNT_TEMPORARILY_LOCKED',
   ACCOUNT_DEACTIVATED: 'ACCOUNT_DEACTIVATED',
   PASSWORD_NOT_SET: 'PASSWORD_NOT_SET',
@@ -67,6 +69,7 @@ export const ResponseCode = {
   ACCOUNT_DELETED: 'ACCOUNT_DELETED',
   ACCOUNT_HAS_ACTIVE_DELIVERIES: 'ACCOUNT_HAS_ACTIVE_DELIVERIES',
   ACCOUNT_HAS_WALLET_BALANCE: 'ACCOUNT_HAS_WALLET_BALANCE',
+  ACCOUNT_HAS_PENDING_SETTLEMENT: 'ACCOUNT_HAS_PENDING_SETTLEMENT',
 
   // ── Address ──
   ADDRESSES_FETCHED: 'ADDRESSES_FETCHED',
@@ -167,15 +170,25 @@ export const ResponseCode = {
   DRIVER_AVAILABILITY_UPDATED: 'DRIVER_AVAILABILITY_UPDATED',
   DRIVER_LOCATION_UPDATED: 'DRIVER_LOCATION_UPDATED',
   DRIVER_DASHBOARD_FETCHED: 'DRIVER_DASHBOARD_FETCHED',
+  DRIVER_APPLICATION_FETCHED: 'DRIVER_APPLICATION_FETCHED',
+  DRIVER_APPLICATION_SUBMITTED: 'DRIVER_APPLICATION_SUBMITTED',
+  DRIVER_NOT_ENROLLED: 'DRIVER_NOT_ENROLLED',
+  DRIVER_NAME_LOCKED: 'DRIVER_NAME_LOCKED',
+  CUSTOMER_NOT_ENROLLED: 'CUSTOMER_NOT_ENROLLED',
+  CUSTOMER_BOOKING_SUSPENDED: 'CUSTOMER_BOOKING_SUSPENDED',
   DRIVER_NOT_APPROVED: 'DRIVER_NOT_APPROVED',
   DRIVER_SUSPENDED: 'DRIVER_SUSPENDED',
   DRIVER_REJECTED: 'DRIVER_REJECTED',
+  DRIVER_AVATAR_REQUIRED: 'DRIVER_AVATAR_REQUIRED',
   DRIVER_DOCUMENTS_INCOMPLETE: 'DRIVER_DOCUMENTS_INCOMPLETE',
   DRIVER_VEHICLE_REQUIRED: 'DRIVER_VEHICLE_REQUIRED',
+  DRIVER_VEHICLE_PHOTO_REQUIRED: 'DRIVER_VEHICLE_PHOTO_REQUIRED',
+  DRIVER_VEHICLE_NOT_APPROVED: 'DRIVER_VEHICLE_NOT_APPROVED',
   DRIVER_HAS_ACTIVE_DELIVERY: 'DRIVER_HAS_ACTIVE_DELIVERY',
   DRIVER_NOT_ONLINE: 'DRIVER_NOT_ONLINE',
   DRIVER_VEHICLE_NOT_FOUND: 'DRIVER_VEHICLE_NOT_FOUND',
   DRIVER_DOCUMENT_NOT_FOUND: 'DRIVER_DOCUMENT_NOT_FOUND',
+  DRIVER_DOCUMENT_EXPIRED: 'DRIVER_DOCUMENT_EXPIRED',
 
   // ── Driver jobs ──
   JOB_REQUESTS_FETCHED: 'JOB_REQUESTS_FETCHED',
@@ -186,6 +199,7 @@ export const ResponseCode = {
   JOB_OFFER_EXPIRED: 'JOB_OFFER_EXPIRED',
   JOB_ALREADY_RESPONDED: 'JOB_ALREADY_RESPONDED',
   JOB_NOT_OFFERED_TO_DRIVER: 'JOB_NOT_OFFERED_TO_DRIVER',
+  JOB_OWN_DELIVERY: 'JOB_OWN_DELIVERY',
   ARRIVED_PICKUP_CONFIRMED: 'ARRIVED_PICKUP_CONFIRMED',
   PICKUP_CONFIRMED: 'PICKUP_CONFIRMED',
   ARRIVED_DROPOFF_CONFIRMED: 'ARRIVED_DROPOFF_CONFIRMED',
@@ -366,27 +380,51 @@ export const RESPONSE_MESSAGES: Partial<Record<ResponseCode, string>> = {
   ACCOUNT_ALREADY_EXISTS: 'An account with this phone number already exists.',
   ACCOUNT_NOT_VERIFIED: 'This account has not been verified yet.',
   ACCOUNT_SUSPENDED: 'This account has been suspended.',
-  ACCOUNT_TEMPORARILY_LOCKED: 'Too many failed sign-in attempts. Please try again shortly.',
+  STEP_UP_REQUIRED: 'Please confirm your password to continue.',
+  STEP_UP_CONFIRMED: 'Password confirmed.',
+  ACCOUNT_TEMPORARILY_LOCKED:
+    'Too many failed sign-in attempts. Please try again shortly.',
   OTP_INVALID: 'The verification code is incorrect.',
   OTP_EXPIRED: 'The verification code has expired. Please request a new one.',
-  OTP_MAX_ATTEMPTS_REACHED: 'Too many incorrect attempts. Please request a new code.',
+  OTP_MAX_ATTEMPTS_REACHED:
+    'Too many incorrect attempts. Please request a new code.',
   OTP_RESEND_TOO_SOON: 'Please wait before requesting another code.',
-  OTP_RATE_LIMITED: 'Too many verification codes requested. Please try again later.',
+  OTP_RATE_LIMITED:
+    'Too many verification codes requested. Please try again later.',
   REFRESH_TOKEN_INVALID: 'The refresh token is invalid.',
-  REFRESH_TOKEN_REUSED: 'This session has been revoked for security reasons. Please sign in again.',
+  REFRESH_TOKEN_REUSED:
+    'This session has been revoked for security reasons. Please sign in again.',
   ACCESS_TOKEN_EXPIRED: 'Your session has expired. Please sign in again.',
 
-  DELIVERY_ALREADY_ASSIGNED: 'This delivery has already been assigned to another driver.',
-  DELIVERY_INVALID_TRANSITION: 'This action is not allowed for the current delivery status.',
+  DELIVERY_ALREADY_ASSIGNED:
+    'This delivery has already been assigned to another driver.',
+  DELIVERY_INVALID_TRANSITION:
+    'This action is not allowed for the current delivery status.',
   DELIVERY_NOT_CANCELLABLE: 'This delivery can no longer be cancelled.',
-  DELIVERY_NO_DRIVER_FOUND: 'No driver is available nearby right now. Please try again shortly.',
+  DELIVERY_NO_DRIVER_FOUND:
+    'No driver is available nearby right now. Please try again shortly.',
   DELIVERY_NOT_REASSIGNABLE:
     'Only a delivery with an assigned driver who has not yet collected the package can be reassigned.',
-  PROOF_OF_DELIVERY_REQUIRED: 'A proof-of-delivery photo is required before completing this delivery.',
+  PROOF_OF_DELIVERY_REQUIRED:
+    'A proof-of-delivery photo is required before completing this delivery.',
 
+  DRIVER_APPLICATION_FETCHED: 'Application fetched successfully.',
+  DRIVER_APPLICATION_SUBMITTED: 'Your application has been submitted for review.',
+  DRIVER_NOT_ENROLLED: 'You have not applied to drive yet.',
+  DRIVER_NAME_LOCKED:
+    'Your name is the one on the ID you were approved with. Please contact support to change it.',
+  CUSTOMER_NOT_ENROLLED: 'This account cannot order deliveries.',
+  CUSTOMER_BOOKING_SUSPENDED:
+    'Booking deliveries has been suspended on this account. Please contact support.',
   DRIVER_NOT_APPROVED: 'Your driver account has not been approved yet.',
-  DRIVER_DOCUMENTS_INCOMPLETE: 'Please upload all required documents before going online.',
+  DRIVER_DOCUMENT_EXPIRED: 'This document has already expired. Please use one that is still valid.',
+  DRIVER_AVATAR_REQUIRED:
+    'Please upload your profile photo before going online.',
+  DRIVER_DOCUMENTS_INCOMPLETE:
+    'Please upload all required documents before going online.',
   DRIVER_VEHICLE_REQUIRED: 'Please register a vehicle before going online.',
+  DRIVER_VEHICLE_PHOTO_REQUIRED:
+    'Please upload a clear vehicle photo before going online.',
   DRIVER_HAS_ACTIVE_DELIVERY: 'You already have an active delivery.',
   DRIVER_ALREADY_APPROVED: 'This driver is already approved.',
   DRIVER_NOT_SUSPENDED: 'Only a suspended driver can be reinstated.',
@@ -400,18 +438,25 @@ export const RESPONSE_MESSAGES: Partial<Record<ResponseCode, string>> = {
   CANNOT_MODIFY_SELF: 'You cannot change your own access.',
   LAST_SUPER_ADMIN: 'The platform must keep at least one super admin.',
   ZONE_CODE_TAKEN: 'Another zone already uses this code.',
-  PAYMENT_NOT_REFUNDABLE: 'This delivery has no settled online payment to refund.',
-  REFUND_EXCEEDS_PAYMENT: 'That is more than is left to refund on this payment.',
-  REFUND_NOT_SETTLEABLE: 'Only a pending refund can be settled or marked failed.',
+  PAYMENT_NOT_REFUNDABLE:
+    'This delivery has no settled online payment to refund.',
+  REFUND_EXCEEDS_PAYMENT:
+    'That is more than is left to refund on this payment.',
+  REFUND_NOT_SETTLEABLE:
+    'Only a pending refund can be settled or marked failed.',
   PROMO_CODE_TAKEN: 'Another promo code already uses this code.',
   ZONE_NOT_FOUND: 'One or more zones do not exist.',
 
   JOB_OFFER_EXPIRED: 'This job request has expired.',
   JOB_ALREADY_RESPONDED: 'You have already responded to this job request.',
+  JOB_OWN_DELIVERY: 'You cannot take a delivery you booked yourself.',
 
-  INSUFFICIENT_BALANCE: 'Your wallet balance is not sufficient for this withdrawal.',
-  WITHDRAWAL_PENDING_EXISTS: 'You already have a withdrawal request awaiting processing.',
-  WITHDRAWAL_SETTINGS_REQUIRED: 'Please add your bank account details before requesting a withdrawal.',
+  INSUFFICIENT_BALANCE:
+    'Your wallet balance is not sufficient for this withdrawal.',
+  WITHDRAWAL_PENDING_EXISTS:
+    'You already have a withdrawal request awaiting processing.',
+  WITHDRAWAL_SETTINGS_REQUIRED:
+    'Please add your bank account details before requesting a withdrawal.',
 };
 
 /** `DELIVERY_CREATED` → `Delivery created`. No trailing punctuation. */

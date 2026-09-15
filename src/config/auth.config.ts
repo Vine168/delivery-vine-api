@@ -23,6 +23,15 @@ export const authConfig = registerAs('auth', () => ({
    * Turn it on once the apps in the field are known to send it.
    */
   requireDeviceOnRefresh: process.env.AUTH_REFRESH_REQUIRE_DEVICE === 'true',
+  /**
+   * Whether a money action must carry a fresh password confirmation.
+   *
+   * A wrong or expired confirmation is always refused. This decides what
+   * happens when there is none at all: builds from before step-up do not send
+   * one, so refusing by default would stop every payout the day it ships.
+   * Turn it on once the driver app in the field asks for the password first.
+   */
+  requireStepUp: process.env.AUTH_STEP_UP_REQUIRED === 'true',
 }));
 
 export type AuthConfig = ReturnType<typeof authConfig>;

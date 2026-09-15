@@ -15,6 +15,7 @@ const DOCS_PATH = 'swagger';
 
 export const SWAGGER_TAGS = [
   ['Authentication', 'Registration, OTP, sign-in, token rotation and password recovery.'],
+  ['Account', 'Who is signed in, and what each side of the account may do.'],
   ['Customer Profile', 'The signed-in customer account and avatar.'],
   ['Customer Address', 'Saved pickup and drop-off addresses.'],
   ['Customer Delivery', 'Quoting, booking, tracking and cancelling deliveries.'],

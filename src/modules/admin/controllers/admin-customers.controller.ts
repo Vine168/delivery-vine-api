@@ -35,7 +35,8 @@ export class AdminCustomersController {
   @ResponseCodeMeta(ResponseCode.ADMIN_CUSTOMERS_FETCHED)
   @ApiOperation({
     summary: 'Customer accounts',
-    description: 'Searchable by name or phone number, filterable by account status and sign-up date.',
+    description:
+      'Searchable by name or phone number, filterable by account status, sign-up date and whether they have ever booked. Every driver holds a customer profile, so `hasOrdered=true` is the list of real customers.',
   })
   @ApiPaginatedResponse({ code: ResponseCode.ADMIN_CUSTOMERS_FETCHED, type: AdminCustomerRowDto })
   findAll(@Query() query: AdminCustomerQueryDto): Promise<PaginatedResult<AdminCustomerRowDto>> {
@@ -79,9 +80,9 @@ export class AdminCustomersController {
   @RequirePermissions('customers.suspend')
   @ResponseCodeMeta(ResponseCode.CUSTOMER_SUSPENDED)
   @ApiOperation({
-    summary: 'Stop a customer booking and signing in',
+    summary: 'Stop a customer booking',
     description:
-      'Revokes every open session and blocks login. Deliveries already in motion are left to finish — the driver is owed for them, and stopping them would punish everyone except the person being suspended.',
+      'Closes the booking side only: their booking endpoints answer 403 CUSTOMER_BOOKING_SUSPENDED. One account serves both apps, so the person stays signed in and, if they also drive, keeps driving — that side is suspended separately under /admin/drivers. Deliveries already in motion are left to finish — the driver is owed for them, and stopping them would punish everyone except the person being suspended.',
   })
   @ApiSuccessResponse({ code: ResponseCode.CUSTOMER_SUSPENDED, type: AdminCustomerDetailDto })
   @ApiErrorResponses(

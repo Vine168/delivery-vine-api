@@ -11,6 +11,7 @@ import type { AuthenticatedUser } from '../../common/interfaces/authenticated-us
 import { UPLOAD_RULES } from './upload-rules.js';
 import type { FileAssetDto } from './dto/upload.dto.js';
 import { FileUrlService } from './file-url.service.js';
+import { Capabilities } from '../../common/utils/capability.util.js';
 
 export interface IncomingFile {
   buffer: Buffer;
@@ -44,7 +45,11 @@ export class UploadsService {
 
     const rule = UPLOAD_RULES[purpose];
 
-    if (!rule.roles.includes(user.role)) {
+    // One account may both order and drive, so what matters is which profiles
+    // it holds — not a role that no longer distinguishes the two.
+    const permitted = Capabilities[rule.requires](user);
+
+    if (!permitted) {
       throw AppException.forbidden(
         ResponseCode.ROLE_NOT_ALLOWED,
         'Your account type cannot upload this kind of file.',

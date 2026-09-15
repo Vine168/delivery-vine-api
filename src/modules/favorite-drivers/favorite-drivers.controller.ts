@@ -3,15 +3,14 @@ import { ApiBearerAuth, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger'
 import { ApiErrorResponses, ApiSuccessResponse } from '../../common/decorators/api-docs.decorator.js';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
 import { ResponseCode as ResponseCodeMeta } from '../../common/decorators/response-code.decorator.js';
-import { Roles } from '../../common/decorators/roles.decorator.js';
 import { ResponseCode } from '../../common/constants/response-codes.js';
-import { UserRole } from '../../generated/prisma/enums.js';
 import { FavoriteDriverDto } from './dto/favorite-driver.dto.js';
 import { FavoriteDriversService } from './favorite-drivers.service.js';
+import { RequiresCustomer } from '../../common/decorators/capability.decorator.js';
 
 @ApiTags('Customer Delivery')
 @ApiBearerAuth()
-@Roles(UserRole.CUSTOMER)
+@RequiresCustomer()
 @Controller({ path: 'mobile/customer/favorite-drivers', version: '1' })
 export class FavoriteDriversController {
   constructor(private readonly favorites: FavoriteDriversService) {}

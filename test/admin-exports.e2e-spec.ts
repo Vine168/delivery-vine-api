@@ -255,9 +255,12 @@ describe('Back office — CSV exports (e2e)', () => {
       const response = await http(harness).get(`${API}/admin/customers/export`).set(asAdmin()).expect(200);
       const { header, rows } = parseCsv(response.text);
 
-      expect(rows).toHaveLength(1);
-      expect(rows[0][header.indexOf('full_name')]).toBe('Sok Dara');
-      expect(rows[0][header.indexOf('deliveries')]).toBe('1');
+      // Two rows: the driver holds a customer profile as well, so they appear
+      // here with no deliveries of their own.
+      expect(rows).toHaveLength(2);
+
+      const ordered = rows.find((row) => row[header.indexOf('full_name')] === 'Sok Dara');
+      expect(ordered?.[header.indexOf('deliveries')]).toBe('1');
     });
   });
 

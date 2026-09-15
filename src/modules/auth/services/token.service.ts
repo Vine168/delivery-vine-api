@@ -1,7 +1,9 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { JwtService } from '@nestjs/jwt';
 import { randomUUID } from 'node:crypto';
+import { DomainEvent } from '../../../common/constants/events.js';
 import { ResponseCode } from '../../../common/constants/response-codes.js';
 import { AppException } from '../../../common/exceptions/app.exception.js';
 import { CryptoUtil } from '../../../common/utils/crypto.util.js';
@@ -10,7 +12,7 @@ import type {
   AccessTokenPayload,
   RefreshTokenPayload,
 } from '../../../common/interfaces/authenticated-user.interface.js';
-import { UserRole } from '../../../generated/prisma/enums.js';
+import { type ClientApp, type DevicePlatform, UserRole } from '../../../generated/prisma/enums.js';
 import {
   ADMIN_PERMISSIONS_RESOLVER,
   type AdminPermissionsResolver,
@@ -20,8 +22,18 @@ import type { DeviceInfoDto } from '../dto/auth-request.dto.js';
 
 interface SessionContext {
   device?: DeviceInfoDto;
+  /** The app the sign-in route implies, for builds that do not name one on the device. */
+  app?: ClientApp | null;
   ipAddress?: string;
   userAgent?: string;
+}
+
+/** Published when an installation the account has never used before signs in. */
+export interface NewDeviceSignedIn {
+  userId: string;
+  deviceId: string;
+  platform: DevicePlatform;
+  app: ClientApp | null;
 }
 
 /** `15m` / `30d` / `900` → seconds. */
@@ -57,6 +69,7 @@ export class TokenService {
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
     private readonly prisma: PrismaService,
+    private readonly events: EventEmitter2,
     @Optional()
     @Inject(ADMIN_PERMISSIONS_RESOLVER)
     private readonly resolvePermissions?: AdminPermissionsResolver,
@@ -85,12 +98,15 @@ export class TokenService {
     user: { id: string; role: UserRole; permissions?: string[] },
     context: SessionContext = {},
   ): Promise<{ tokens: AuthTokensDto; sessionId: string }> {
-    const deviceId = context.device ? await this.upsertDevice(user.id, context.device) : null;
+    // The app's own word first; failing that, what the sign-in route implies.
+    const app = context.device?.app ?? context.app ?? null;
+    const deviceId = context.device ? await this.upsertDevice(user.id, context.device, app) : null;
 
     const session = await this.prisma.userSession.create({
       data: {
         userId: user.id,
         deviceId,
+        app,
         ipAddress: context.ipAddress,
         userAgent: context.userAgent,
       },
@@ -120,7 +136,7 @@ export class TokenService {
         revokedAt: true,
         expiresAt: true,
         user: { select: { id: true, role: true, status: true, deletedAt: true } },
-        session: { select: { device: { select: { installationId: true } } } },
+        session: { select: { app: true, device: { select: { installationId: true } } } },
       },
     });
 
@@ -158,7 +174,13 @@ export class TokenService {
 
     await this.prisma.userSession.update({
       where: { id: existing.sessionId },
-      data: { lastSeenAt: new Date(), ipAddress: context.ipAddress ?? undefined },
+      data: {
+        lastSeenAt: new Date(),
+        ipAddress: context.ipAddress ?? undefined,
+        // A session opened by a build that did not say which app it was learns
+        // it the first time an updated build refreshes it.
+        ...(!existing.session.app && context.device?.app ? { app: context.device.app } : {}),
+      },
     });
 
     return tokens;
@@ -229,13 +251,17 @@ export class TokenService {
     ]);
   }
 
-  async revokeByRefreshToken(refreshToken: string): Promise<void> {
+  /**
+   * Revokes the session a refresh token belongs to — only when it belongs to
+   * `userId`, so signing out cannot be used to end somebody else's session.
+   */
+  async revokeByRefreshToken(refreshToken: string, userId: string): Promise<void> {
     const tokenHash = CryptoUtil.sha256(refreshToken);
     const record = await this.prisma.refreshToken.findUnique({
       where: { tokenHash },
-      select: { sessionId: true },
+      select: { sessionId: true, userId: true },
     });
-    if (record) await this.revokeSession(record.sessionId);
+    if (record?.userId === userId) await this.revokeSession(record.sessionId);
   }
 
   async verifyRefreshToken(token: string): Promise<RefreshTokenPayload> {
@@ -330,13 +356,17 @@ export class TokenService {
     });
   }
 
-  private async upsertDevice(userId: string, device: DeviceInfoDto): Promise<string> {
+  private async upsertDevice(userId: string, device: DeviceInfoDto, app: ClientApp | null): Promise<string> {
+    const where = { userId_installationId: { userId, installationId: device.installationId } };
+    const known = await this.prisma.device.findUnique({ where, select: { id: true } });
+
     const record = await this.prisma.device.upsert({
-      where: { userId_installationId: { userId, installationId: device.installationId } },
+      where,
       create: {
         userId,
         installationId: device.installationId,
         platform: device.platform,
+        app,
         model: device.model,
         osVersion: device.osVersion,
         appVersion: device.appVersion,
@@ -344,6 +374,9 @@ export class TokenService {
       },
       update: {
         platform: device.platform,
+        // Never cleared by a build that does not say: an installation does not
+        // stop being the driver app because an older code path signed it in.
+        ...(app ? { app } : {}),
         model: device.model,
         osVersion: device.osVersion,
         appVersion: device.appVersion,
@@ -361,6 +394,37 @@ export class TokenService {
       });
     }
 
+    if (!known) {
+      await this.announceNewDevice(userId, record.id, device.platform, app);
+    }
+
     return record.id;
+  }
+
+  /**
+   * Tells the account holder when an installation they have not used before
+   * signs in.
+   *
+   * Not for the first one — that is them signing up. From the second on, a
+   * sign-in they do not recognise is the earliest warning that someone else
+   * has their password, and one password now opens a driver's wallet as well
+   * as the customer app. Published rather than sent from here, so the auth
+   * module does not reach into notifications.
+   */
+  private async announceNewDevice(
+    userId: string,
+    deviceId: string,
+    platform: DevicePlatform,
+    app: ClientApp | null,
+  ): Promise<void> {
+    const others = await this.prisma.device.count({ where: { userId, NOT: { id: deviceId } } });
+    if (others === 0) return;
+
+    this.events.emit(DomainEvent.NEW_DEVICE_SIGNED_IN, {
+      userId,
+      deviceId,
+      platform,
+      app,
+    } satisfies NewDeviceSignedIn);
   }
 }

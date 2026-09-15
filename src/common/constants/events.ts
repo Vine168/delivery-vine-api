@@ -43,6 +43,8 @@ export const WsEvent = {
 
 export const WsRoom = {
   user: (userId: string) => `user:${userId}`,
+  /** One of the person's two apps. A build that has not said which joins both. */
+  userApp: (userId: string, app: string) => `user:${userId}:${app}`,
   driver: (driverId: string) => `driver:${driverId}`,
   delivery: (deliveryId: string) => `delivery:${deliveryId}`,
   conversation: (conversationId: string) => `conversation:${conversationId}`,
@@ -65,4 +67,5 @@ export const DomainEvent = {
   PAYMENT_STATUS_CHANGED: 'payment.status_changed',
   WITHDRAWAL_STATUS_CHANGED: 'withdrawal.status_changed',
   MESSAGE_CREATED: 'message.created',
+  NEW_DEVICE_SIGNED_IN: 'auth.new_device_signed_in',
 } as const;

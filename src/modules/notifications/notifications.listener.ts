@@ -2,7 +2,14 @@ import { Injectable, Logger } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
 import { DomainEvent } from '../../common/constants/events.js';
 import { PrismaService } from '../../database/prisma.service.js';
-import { DeliveryStatus, NotificationType, WithdrawalStatus } from '../../generated/prisma/enums.js';
+import {
+  ClientApp,
+  DeliveryStatus,
+  DevicePlatform,
+  NotificationType,
+  WithdrawalStatus,
+} from '../../generated/prisma/enums.js';
+import type { NewDeviceSignedIn } from '../auth/services/token.service.js';
 import type { TransitionResult } from '../deliveries/delivery-state.service.js';
 import { NotificationsService } from './notifications.service.js';
 
@@ -57,6 +64,17 @@ const WITHDRAWAL_MESSAGES: Partial<Record<WithdrawalStatus, { title: string; bod
   [WithdrawalStatus.REJECTED]: { title: 'Payout rejected', body: 'Your withdrawal request was rejected. The money is back in your wallet.' },
 };
 
+const PLATFORM_NAMES: Record<DevicePlatform, string> = {
+  [DevicePlatform.IOS]: 'an iPhone',
+  [DevicePlatform.ANDROID]: 'an Android phone',
+  [DevicePlatform.WEB]: 'a web browser',
+};
+
+const APP_NAMES: Record<ClientApp, string> = {
+  [ClientApp.CUSTOMER]: 'the customer app',
+  [ClientApp.DRIVER]: 'the driver app',
+};
+
 /**
  * Turns things that happened into things people are told.
  *
@@ -96,6 +114,8 @@ export class NotificationsListener {
         body: message.body(delivery.driver?.fullName ?? 'Your driver'),
         deliveryId: event.deliveryId,
         data: { bookingCode: delivery.bookingCode, status: event.to },
+        // Every message here is the customer's, a cancellation included.
+        app: ClientApp.CUSTOMER,
       });
     } catch (error) {
       this.logger.error(`Could not notify for ${event.bookingCode}: ${String(error)}`);
@@ -124,6 +144,26 @@ export class NotificationsListener {
       });
     } catch (error) {
       this.logger.error(`Could not notify about withdrawal ${event.withdrawalId}: ${String(error)}`);
+    }
+  }
+
+  /** Told in both apps: whichever the person has open should see it at once. */
+  @OnEvent(DomainEvent.NEW_DEVICE_SIGNED_IN)
+  async onNewDeviceSignedIn(event: NewDeviceSignedIn): Promise<void> {
+    const where = PLATFORM_NAMES[event.platform];
+    const through = event.app ? `, in ${APP_NAMES[event.app]}` : '';
+
+    try {
+      await this.notifications.create({
+        userId: event.userId,
+        type: NotificationType.NEW_SIGN_IN,
+        title: 'New sign-in',
+        body: `Your account was just signed in on ${where}${through}. If this was not you, reset your password now.`,
+        data: { deviceId: event.deviceId },
+        app: null,
+      });
+    } catch (error) {
+      this.logger.error(`Could not tell ${event.userId} about a new sign-in: ${String(error)}`);
     }
   }
 }

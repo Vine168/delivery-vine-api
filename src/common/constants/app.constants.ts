@@ -5,6 +5,8 @@ export const METADATA_KEY = {
   RESPONSE_MESSAGE: 'response:message',
   RATE_LIMIT: 'rateLimit:options',
   IDEMPOTENT: 'idempotency:enabled',
+  CAPABILITY: 'auth:capability',
+  STEP_UP: 'auth:stepUp',
 } as const;
 
 export const PAGINATION = {

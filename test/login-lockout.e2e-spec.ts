@@ -91,31 +91,23 @@ describe('Sign-in lockout (e2e)', () => {
   });
 
   describe('one phone, two apps', () => {
-    it('locking the customer account leaves the same person driving', async () => {
+    it('locks the one account out of both apps at once', async () => {
       const phone = nextPhone();
       const customer = await activate(harness, 'CUSTOMER', phone);
       await harness.expireOtpCooldowns();
       const driver = await readyDriver(harness, { latitude: 11.557, longitude: 104.929 }, phone);
 
+      // Same account, both capabilities — not two accounts sharing a number.
       expect(customer.phone).toBe(driver.phone);
+      expect(driver.userId).toBe(customer.userId);
 
       await failUntilLocked(phone, 'CUSTOMER');
+
+      // There is one password to guess and one account to protect, so the
+      // driver app is locked out too. Whoever was guessing does not get a
+      // second budget by asking through the other app.
       expect((await attempt(phone, 'CUSTOMER', PASSWORD)).status).toBe(429);
-
-      // Their livelihood is a separate account and is untouched.
-      await attempt(phone, 'DRIVER', PASSWORD).expect(200);
-    });
-
-    it('locking the driver account leaves them able to order a delivery', async () => {
-      const phone = nextPhone();
-      await activate(harness, 'CUSTOMER', phone);
-      await harness.expireOtpCooldowns();
-      await readyDriver(harness, { latitude: 11.557, longitude: 104.929 }, phone);
-
-      await failUntilLocked(phone, 'DRIVER');
       expect((await attempt(phone, 'DRIVER', PASSWORD)).status).toBe(429);
-
-      await attempt(phone, 'CUSTOMER', PASSWORD).expect(200);
     });
 
     it('keeps one person’s failures away from another’s account', async () => {

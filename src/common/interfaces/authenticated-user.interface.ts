@@ -1,4 +1,4 @@
-import type { UserRole, UserStatus } from '../../generated/prisma/enums.js';
+import type { ClientApp, DriverApprovalStatus, UserRole, UserStatus } from '../../generated/prisma/enums.js';
 
 /** What the JWT guard puts on `request.user`. Never contains secrets. */
 export interface AuthenticatedUser {
@@ -7,10 +7,26 @@ export interface AuthenticatedUser {
   status: UserStatus;
   phone: string;
   sessionId: string;
-  /** Present only for CUSTOMER accounts. */
+  /**
+   * The app this session signed in through. Absent for the back office, and
+   * for app builds from before the apps said which they were — those are
+   * treated as both.
+   */
+  app?: ClientApp;
+  /** Set once the account has a customer profile; `customerSuspended` decides whether it may book. */
   customerId?: string;
-  /** Present only for DRIVER accounts. */
+  /**
+   * True while an operator has stopped this account booking. Only meaningful
+   * alongside `customerId`; the driver side is judged by `driverApprovalStatus`.
+   */
+  customerSuspended?: boolean;
+  /**
+   * Set once the account has applied to drive, whatever the outcome. Presence
+   * means enrolled, not allowed: `driverApprovalStatus` decides that.
+   */
   driverId?: string;
+  /** Only meaningful alongside `driverId`. */
+  driverApprovalStatus?: DriverApprovalStatus;
 }
 
 export interface AccessTokenPayload {

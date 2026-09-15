@@ -11,6 +11,7 @@ import { OtpService } from './services/otp.service.js';
 import { LoggingOtpSender, OTP_SENDER } from './services/otp-sender.interface.js';
 import { PlasGateOtpSender } from './services/plasgate-otp-sender.js';
 import { PasswordService } from './services/password.service.js';
+import { StepUpService } from './services/step-up.service.js';
 import { TokenService } from './services/token.service.js';
 
 @Module({
@@ -22,6 +23,7 @@ import { TokenService } from './services/token.service.js';
     TokenService,
     OtpService,
     PasswordService,
+    StepUpService,
     JwtStrategy,
     // Swap this provider to plug in a real SMS gateway.
     {
@@ -35,6 +37,7 @@ import { TokenService } from './services/token.service.js';
         PlasGateOtpSender.isConfigured(config) ? new PlasGateOtpSender(config) : new LoggingOtpSender(),
     },
   ],
-  exports: [AuthService, TokenService, OtpService, PasswordService],
+  // StepUpService for the global StepUpGuard, which money routes elsewhere opt into.
+  exports: [AuthService, TokenService, OtpService, PasswordService, StepUpService],
 })
 export class AuthModule {}

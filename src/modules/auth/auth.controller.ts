@@ -8,7 +8,7 @@ import { RateLimit } from '../../common/decorators/rate-limit.decorator.js';
 import { ResponseCode as ResponseCodeMeta } from '../../common/decorators/response-code.decorator.js';
 import { ResponseCode } from '../../common/constants/response-codes.js';
 import type { AuthenticatedUser } from '../../common/interfaces/authenticated-user.interface.js';
-import { UserRole } from '../../generated/prisma/enums.js';
+import { ClientApp } from '../../generated/prisma/enums.js';
 import { AuthService, type RequestMetadata } from './auth.service.js';
 import {
   ForgotPasswordDto,
@@ -21,6 +21,7 @@ import {
   ResetPasswordDto,
   SendOtpDto,
   SetPasswordDto,
+  StepUpDto,
   VerifyForgotPasswordDto,
   VerifyOtpDto,
 } from './dto/auth-request.dto.js';
@@ -30,6 +31,7 @@ import {
   OtpChallengeDto,
   OtpVerifiedDto,
   RegistrationStartedDto,
+  StepUpTokenDto,
 } from './dto/auth-response.dto.js';
 
 @ApiTags('Authentication')
@@ -60,7 +62,7 @@ export class AuthController {
     { status: 429, code: ResponseCode.OTP_RATE_LIMITED },
   )
   registerCustomer(@Body() dto: RegisterCustomerDto, @Req() request: Request): Promise<RegistrationStartedDto> {
-    return this.auth.register(dto, UserRole.CUSTOMER, this.metadata(request));
+    return this.auth.register(dto, false, this.metadata(request));
   }
 
   @Public()
@@ -71,7 +73,7 @@ export class AuthController {
   @ApiOperation({
     summary: 'Start driver registration',
     description:
-      'Creates a pending driver account (approvalStatus PENDING_APPROVAL). Documents and a vehicle must be added before the driver can go online.',
+      'Creates the same pending mobile account as customer registration, already enrolled as a driver (approvalStatus PENDING_APPROVAL) — one account serves both apps. Documents and a vehicle must be added before the driver can go online.',
   })
   @ApiSuccessResponse({ status: 201, code: ResponseCode.REGISTERED, type: RegistrationStartedDto })
   @ApiErrorResponses(
@@ -79,7 +81,7 @@ export class AuthController {
     { status: 429, code: ResponseCode.OTP_RATE_LIMITED },
   )
   registerDriver(@Body() dto: RegisterDriverDto, @Req() request: Request): Promise<RegistrationStartedDto> {
-    return this.auth.register(dto, UserRole.DRIVER, this.metadata(request));
+    return this.auth.register(dto, true, this.metadata(request));
   }
 
   // ── OTP ────────────────────────────────────────────────────────────────
@@ -92,7 +94,7 @@ export class AuthController {
   @ApiOperation({
     summary: 'Send a verification code',
     description:
-      'Rate limited per IP and, inside the OTP service, per identifier. For PASSWORD_RESET the response is identical whether or not the account exists, so it cannot be used to discover registered numbers.',
+      'Rate limited per IP and, inside the OTP service, per identifier. Only REGISTRATION and PASSWORD_RESET are accepted. A code is sent only when there is an account to spend it on — a pending registration, or an account to reset; otherwise the response looks the same and nothing is sent.',
   })
   @ApiSuccessResponse({ code: ResponseCode.OTP_SENT, type: OtpChallengeDto })
   @ApiErrorResponses(
@@ -155,7 +157,7 @@ export class AuthController {
     { status: 404, code: ResponseCode.ACCOUNT_NOT_FOUND },
   )
   setCustomerPassword(@Body() dto: SetPasswordDto, @Req() request: Request): Promise<AuthSessionDto> {
-    return this.auth.setPassword(dto, UserRole.CUSTOMER, this.metadata(request));
+    return this.auth.setPassword(dto, this.metadata(request), ClientApp.CUSTOMER);
   }
 
   @Public()
@@ -173,7 +175,7 @@ export class AuthController {
     { status: 404, code: ResponseCode.ACCOUNT_NOT_FOUND },
   )
   setDriverPassword(@Body() dto: SetPasswordDto, @Req() request: Request): Promise<AuthSessionDto> {
-    return this.auth.setPassword(dto, UserRole.DRIVER, this.metadata(request));
+    return this.auth.setPassword(dto, this.metadata(request), ClientApp.DRIVER);
   }
 
   // ── Session ────────────────────────────────────────────────────────────
@@ -186,7 +188,7 @@ export class AuthController {
   @ApiOperation({
     summary: 'Sign in',
     description:
-      'One phone number may hold both a customer and a driver account, so the app must state which role it is signing in as.',
+      'One account serves both the customer and the driver app, so the mobile apps may omit role. Send it only to sign in to a back-office account.',
   })
   @ApiSuccessResponse({ code: ResponseCode.LOGGED_IN, type: AuthSessionDto })
   @ApiErrorResponses(
@@ -226,7 +228,7 @@ export class AuthController {
   @ApiOperation({
     summary: 'Sign out of this session, or every session',
     description:
-      'Revokes the refresh token and its family. Access tokens already issued stay valid until they expire — they are short-lived by design — so treat sign-out as ending the ability to refresh, not as an instant kill switch.',
+      'Revokes this session and its refresh tokens, or every session with allDevices. Access tokens for a revoked session stop working on the next request, because every request checks that its session is still live.',
   })
   @ApiBody({ type: LogoutDto, required: false })
   @ApiSuccessResponse({ code: ResponseCode.LOGGED_OUT })
@@ -238,6 +240,25 @@ export class AuthController {
       userId: user.userId,
     });
     return null;
+  }
+
+  @Post('step-up')
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth()
+  @RateLimit({ bucket: 'auth:step-up', limit: 10, windowSeconds: 300 })
+  @ResponseCodeMeta(ResponseCode.STEP_UP_CONFIRMED)
+  @ApiOperation({
+    summary: 'Confirm your password before a money action',
+    description:
+      'Returns a token for the X-Step-Up-Token header, good for five minutes on this session only. Changing bank details and requesting a payout ask for it. A wrong password answers 403 INVALID_CREDENTIALS — not 401, because the session itself is fine — and counts towards the same lockout as signing in.',
+  })
+  @ApiSuccessResponse({ code: ResponseCode.STEP_UP_CONFIRMED, type: StepUpTokenDto })
+  @ApiErrorResponses(
+    { status: 403, code: ResponseCode.INVALID_CREDENTIALS },
+    { status: 429, code: ResponseCode.ACCOUNT_TEMPORARILY_LOCKED },
+  )
+  stepUp(@CurrentUser() user: AuthenticatedUser, @Body() dto: StepUpDto): Promise<StepUpTokenDto> {
+    return this.auth.stepUp(user, dto);
   }
 
   // ── Password recovery ──────────────────────────────────────────────────

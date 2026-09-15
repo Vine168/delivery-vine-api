@@ -24,7 +24,31 @@ async function bootstrap(): Promise<void> {
   const host = config.get<string>('app.host', '0.0.0.0');
   const corsOrigins = config.get<string[]>('app.corsOrigins', ['*']);
 
-  app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
+  /*
+   * Two helmet defaults assume TLS in front of the app, and in development
+   * there is none.
+   *
+   * `upgrade-insecure-requests` rewrites every subresource to https. The
+   * documentation page is then served over http and immediately asks for its
+   * own stylesheet and scripts over https, which nothing is listening for — so
+   * the page returns 200 and renders a blank screen. HSTS compounds it: the
+   * browser remembers the rule for a year and applies it to every other
+   * service on the same host, long after the tab is closed.
+   *
+   * Both stay on in production, where the app is served over https.
+   */
+  const isProduction = config.get<boolean>('app.isProduction', false);
+
+  app.use(
+    helmet({
+      crossOriginResourcePolicy: { policy: 'cross-origin' },
+      contentSecurityPolicy: {
+        useDefaults: true,
+        directives: isProduction ? {} : { upgradeInsecureRequests: null },
+      },
+      strictTransportSecurity: isProduction,
+    }),
+  );
   app.use(compression());
 
   // Mobile clients send JSON; uploads go through multipart with their own limit.

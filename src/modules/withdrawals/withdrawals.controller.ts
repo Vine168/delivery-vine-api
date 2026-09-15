@@ -4,12 +4,10 @@ import { ApiErrorResponses, ApiPaginatedResponse, ApiSuccessResponse } from '../
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
 import { Idempotent } from '../../common/decorators/idempotent.decorator.js';
 import { ResponseCode as ResponseCodeMeta } from '../../common/decorators/response-code.decorator.js';
-import { Roles } from '../../common/decorators/roles.decorator.js';
 import { ResponseCode } from '../../common/constants/response-codes.js';
 import { IdParamDto } from '../../common/dto/id-param.dto.js';
 import type { PaginatedResult } from '../../common/interfaces/paginated.interface.js';
 import type { AuthenticatedUser } from '../../common/interfaces/authenticated-user.interface.js';
-import { UserRole } from '../../generated/prisma/enums.js';
 import { WithdrawalsService } from './withdrawals.service.js';
 import {
   CreateWithdrawalDto,
@@ -18,10 +16,12 @@ import {
   WithdrawalDto,
   WithdrawalSettingsDto,
 } from './dto/withdrawal.dto.js';
+import { RequiresDriver } from '../../common/decorators/capability.decorator.js';
+import { RequiresStepUp } from '../auth/requires-step-up.decorator.js';
 
 @ApiTags('Driver Wallet')
 @ApiBearerAuth()
-@Roles(UserRole.DRIVER)
+@RequiresDriver()
 @Controller({ path: 'mobile/driver', version: '1' })
 export class WithdrawalsController {
   constructor(private readonly withdrawals: WithdrawalsService) {}
@@ -38,12 +38,18 @@ export class WithdrawalsController {
   }
 
   @Put('withdrawal-settings')
+  @RequiresStepUp()
   @ResponseCodeMeta(ResponseCode.WITHDRAWAL_SETTINGS_UPDATED)
-  @ApiOperation({ summary: 'Set or replace your bank details' })
+  @ApiOperation({
+    summary: 'Set or replace your bank details',
+    description:
+      'This decides where payouts go, so it asks for the password first: send the X-Step-Up-Token from POST /auth/step-up.',
+  })
   @ApiSuccessResponse({ code: ResponseCode.WITHDRAWAL_SETTINGS_UPDATED, type: WithdrawalSettingsDto })
   @ApiErrorResponses(
     { status: 400, code: ResponseCode.VALIDATION_ERROR },
     { status: 400, code: ResponseCode.FILE_NOT_FOUND },
+    { status: 403, code: ResponseCode.STEP_UP_REQUIRED },
   )
   updateSettings(
     @CurrentUser() user: AuthenticatedUser,
@@ -55,14 +61,16 @@ export class WithdrawalsController {
   @Post('withdrawals')
   @HttpCode(HttpStatus.CREATED)
   @Idempotent()
+  @RequiresStepUp()
   @ResponseCodeMeta(ResponseCode.WITHDRAWAL_REQUESTED)
   @ApiOperation({
     summary: 'Request a payout',
     description:
-      'The amount is reserved immediately, so it cannot be requested twice, but it does not leave the wallet until the transfer actually settles. Only one request may be open at a time.',
+      'The amount is reserved immediately, so it cannot be requested twice, but it does not leave the wallet until the transfer actually settles. Only one request may be open at a time. Asks for the password first: send the X-Step-Up-Token from POST /auth/step-up.',
   })
   @ApiSuccessResponse({ status: 201, code: ResponseCode.WITHDRAWAL_REQUESTED, type: WithdrawalDto })
   @ApiErrorResponses(
+    { status: 403, code: ResponseCode.STEP_UP_REQUIRED },
     { status: 409, code: ResponseCode.WITHDRAWAL_PENDING_EXISTS },
     { status: 422, code: ResponseCode.WITHDRAWAL_SETTINGS_REQUIRED },
     { status: 422, code: ResponseCode.INSUFFICIENT_BALANCE },

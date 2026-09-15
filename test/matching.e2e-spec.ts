@@ -66,11 +66,13 @@ describe('Availability, presence and matching (e2e)', () => {
     it('refuses an unapproved driver', async () => {
       const driver = await activate(harness, 'DRIVER');
 
+      // The capability gate answers first: going online is reserved for an
+      // approved driver, so this never reaches the readiness rules.
       const response = await http(harness)
         .put(`${API}/mobile/driver/availability`)
         .set(bearer(driver))
         .send({ status: 'ONLINE' })
-        .expect(422);
+        .expect(403);
 
       expect(response.body.code).toBe('DRIVER_NOT_APPROVED');
     });
@@ -82,13 +84,25 @@ describe('Availability, presence and matching (e2e)', () => {
         data: { approvalStatus: 'ACTIVE' },
       });
 
-      const response = await http(harness)
+      await http(harness)
         .put(`${API}/mobile/driver/availability`)
         .set(bearer(driver))
         .send({ status: 'ONLINE' })
         .expect(422);
 
-      expect(['DRIVER_VEHICLE_REQUIRED', 'DRIVER_DOCUMENTS_INCOMPLETE']).toContain(response.body.code);
+      /*
+       * A driver who has submitted nothing fails several requirements at once
+       * and the endpoint reports whichever it reaches first, so asserting on
+       * that single code makes the test a hostage to the order of the checks.
+       * The rule under test is that the missing vehicle is one of them.
+       */
+      const profile = await http(harness)
+        .get(`${API}/mobile/driver/profile`)
+        .set(bearer(driver))
+        .expect(200);
+
+      expect(profile.body.data.readiness.blockers).toContain('DRIVER_VEHICLE_REQUIRED');
+      expect(profile.body.data.readiness.canGoOnline).toBe(false);
     });
 
     it('lets a fully onboarded driver go online and start an online session', async () => {
@@ -146,7 +160,16 @@ describe('Availability, presence and matching (e2e)', () => {
 
   describe('location reporting', () => {
     it('refuses a fix from an offline driver', async () => {
-      const driver = await activate(harness, 'DRIVER');
+      // Approved, so the capability gate lets this through and the rule under
+      // test — you must be online to report a position — is the one that
+      // actually answers.
+      const driver = await readyDriver(harness);
+
+      await http(harness)
+        .put(`${API}/mobile/driver/availability`)
+        .set(bearer(driver))
+        .send({ status: 'OFFLINE' })
+        .expect(200);
 
       const response = await http(harness)
         .put(`${API}/mobile/driver/location`)
@@ -328,6 +351,24 @@ describe('Availability, presence and matching (e2e)', () => {
       expect(result.offersMade).toBe(0);
     });
 
+    it('never offers a delivery to the booker’s own driver profile', async () => {
+      // One account on both sides: the customer is also a driver, online right
+      // by their own pickup. The other driver nearby gets the job; they do not.
+      await harness.expireOtpCooldowns();
+      await readyDriver(harness, NEARBY, customer.phone);
+      const other = await readyDriver(harness, NEARBY);
+      const delivery = await book();
+
+      const result = await harness.matching.runRound(delivery.id, 1);
+
+      expect(result.offersMade).toBe(1);
+      const offers = await harness.prisma.deliveryAssignment.findMany({
+        where: { deliveryId: delivery.id },
+        select: { driverId: true },
+      });
+      expect(offers.map((offer) => offer.driverId)).toEqual([other.driverId]);
+    });
+
     it('expires the delivery when nobody takes it', async () => {
       const delivery = await book();
 
@@ -412,6 +453,32 @@ describe('Availability, presence and matching (e2e)', () => {
         .expect(404);
 
       expect(response.body.code).toBe('JOB_NOT_FOUND');
+    });
+
+    it('refuses a delivery the driver booked themselves', async () => {
+      await harness.expireOtpCooldowns();
+      const self = await readyDriver(harness, NEARBY, customer.phone);
+      const delivery = await book();
+
+      // Matching never makes this offer; one written straight to the table
+      // stands in for any that exists anyway.
+      await harness.prisma.deliveryAssignment.create({
+        data: {
+          deliveryId: delivery.id,
+          driverId: self.driverId as string,
+          round: 1,
+          expiresAt: new Date(Date.now() + 60_000),
+        },
+      });
+
+      const response = await http(harness)
+        .post(`${API}/mobile/driver/jobs/${delivery.id}/accept`)
+        .set(bearer(self))
+        .expect(403);
+      expect(response.body.code).toBe('JOB_OWN_DELIVERY');
+
+      const row = await harness.prisma.delivery.findUniqueOrThrow({ where: { id: delivery.id } });
+      expect(row.driverId).toBeNull();
     });
 
     it('refuses an offer that has already lapsed', async () => {

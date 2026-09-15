@@ -10,7 +10,11 @@ import {
 } from '../../../generated/prisma/enums.js';
 
 export class UpdateDriverProfileDto {
-  @ApiPropertyOptional({ example: 'Chan Sopheak' })
+  @ApiPropertyOptional({
+    example: 'Chan Sopheak',
+    description:
+      'The name on the driver’s ID. Editable until they are approved; after that only support can change it, and sending a different one is refused with 409 DRIVER_NAME_LOCKED.',
+  })
   @IsString()
   @Length(1, 120)
   @IsOptional()

@@ -150,7 +150,10 @@ describe('Back office — dashboard and deliveries (e2e)', () => {
 
       expect(data.drivers.total).toBe(1);
       expect(data.drivers.active).toBe(1);
-      expect(data.customers.total).toBe(1);
+      // The driver counts as a customer too — one account, both apps — so
+      // `total` is everyone who *can* order, while `orderedInRange` is the
+      // number who actually did.
+      expect(data.customers.total).toBe(2);
       expect(data.customers.orderedInRange).toBe(1);
 
       // Fourteen days by default, every one of them present.

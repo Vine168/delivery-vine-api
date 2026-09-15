@@ -42,12 +42,13 @@ function createFakeRedis() {
       return next;
     },
     client: {
-      async set(key: string, value: string, _mode: string, ttl: number) {
+      async set(key: string, value: string, _mode: string, ttl: number, condition?: 'NX') {
+        if (condition === 'NX' && live(key)) return null;
         store.set(key, { value, expiresAt: Date.now() + ttl * 1000 });
         return 'OK';
       },
-      async del(key: string) {
-        return store.delete(key) ? 1 : 0;
+      async del(...keys: string[]) {
+        return keys.filter((key) => live(key) && store.delete(key)).length;
       },
     },
   };
@@ -148,6 +149,13 @@ describe('OtpService', () => {
       await expect(issue()).rejects.toMatchObject({ code: ResponseCode.OTP_RESEND_TOO_SOON });
     });
 
+    it('sends one code when two requests arrive together', async () => {
+      const results = await Promise.allSettled([issue(), issue()]);
+
+      expect(sent).toHaveLength(1);
+      expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1);
+    });
+
     it('enforces the hourly budget once the cooldown is cleared', async () => {
       for (let i = 0; i < 3; i++) {
         await issue();
@@ -203,6 +211,35 @@ describe('OtpService', () => {
       await expect(service.verify(subject, sent[0].code)).rejects.toMatchObject({
         code: ResponseCode.OTP_EXPIRED,
       });
+    });
+
+    it('holds the attempt cap against guesses sent all at once', async () => {
+      await issue();
+      const wrong = sent[0].code === '000000' ? '111111' : '000000';
+
+      const results = await Promise.allSettled(
+        Array.from({ length: 6 }, () => service.verify(subject, wrong)),
+      );
+      const refusedAsWrong = results.filter(
+        (result) => result.status === 'rejected' && result.reason.code === ResponseCode.OTP_INVALID,
+      );
+
+      // maxAttempts is 3: two plain refusals, then the challenge is burnt.
+      expect(refusedAsWrong).toHaveLength(2);
+      await expect(service.verify(subject, sent[0].code)).rejects.toMatchObject({
+        code: ResponseCode.OTP_EXPIRED,
+      });
+    });
+
+    it('spends the right code once even when it is sent twice at once', async () => {
+      await issue();
+
+      const results = await Promise.allSettled([
+        service.verify(subject, sent[0].code),
+        service.verify(subject, sent[0].code),
+      ]);
+
+      expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
     });
 
     it('does not accept a code issued for a different purpose or role', async () => {

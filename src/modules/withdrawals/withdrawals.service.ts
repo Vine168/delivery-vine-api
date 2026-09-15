@@ -118,6 +118,17 @@ export class WithdrawalsService {
   }
 
   /**
+   * The check updateSettings() makes before it writes: a KHQR image, if one is
+   * sent, is the caller's own. Public so the driver application can make it
+   * before saving any of its parts.
+   */
+  async assertSettingsValid(userId: string, dto: UpdateWithdrawalSettingsDto): Promise<void> {
+    if (dto.khqrFileId) {
+      await this.uploads.assertOwnedForPurpose(dto.khqrFileId, userId, [FilePurpose.KHQR_IMAGE]);
+    }
+  }
+
+  /**
    * The account number is encrypted at rest and never returned in full — the
    * driver already knows it, and nothing in the platform reads it back except
    * the payout file.
@@ -127,9 +138,7 @@ export class WithdrawalsService {
     userId: string,
     dto: UpdateWithdrawalSettingsDto,
   ): Promise<WithdrawalSettingsDto> {
-    if (dto.khqrFileId) {
-      await this.uploads.assertOwnedForPurpose(dto.khqrFileId, userId, [FilePurpose.KHQR_IMAGE]);
-    }
+    await this.assertSettingsValid(userId, dto);
 
     const digits = dto.accountNumber.replace(/\D/g, '');
 

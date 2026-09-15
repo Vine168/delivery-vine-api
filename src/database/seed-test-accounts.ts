@@ -61,7 +61,20 @@ async function main(): Promise<void> {
   });
 
   // ── Driver, ready to work ─────────────────────────────────────────────
-  const driverUser = await upsertUser(DRIVER_PHONE, UserRole.DRIVER);
+  // A driver is a mobile account with a driver profile on it: sign-in only
+  // looks up CUSTOMER-role accounts now, so a DRIVER-role row cannot log in.
+  // A database seeded before the merge has that row; converting it in place
+  // keeps a re-run from leaving this number with two accounts.
+  await prisma.user.updateMany({
+    where: { phone: DRIVER_PHONE, role: UserRole.DRIVER },
+    data: { role: UserRole.CUSTOMER },
+  });
+  const driverUser = await upsertUser(DRIVER_PHONE, UserRole.CUSTOMER);
+  await prisma.customerProfile.upsert({
+    where: { userId: driverUser.id },
+    create: { userId: driverUser.id, fullName: 'Test Driver' },
+    update: {},
+  });
   const driver = await prisma.driverProfile.upsert({
     where: { userId: driverUser.id },
     create: {

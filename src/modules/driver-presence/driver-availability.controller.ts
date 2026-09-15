@@ -4,9 +4,7 @@ import { ApiErrorResponses, ApiSuccessResponse } from '../../common/decorators/a
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
 import { RateLimit } from '../../common/decorators/rate-limit.decorator.js';
 import { ResponseCode as ResponseCodeMeta } from '../../common/decorators/response-code.decorator.js';
-import { Roles } from '../../common/decorators/roles.decorator.js';
 import { ResponseCode } from '../../common/constants/response-codes.js';
-import { UserRole } from '../../generated/prisma/enums.js';
 import { DriverAvailabilityService } from './driver-availability.service.js';
 import { DriverDashboardService } from './driver-dashboard.service.js';
 import {
@@ -16,10 +14,11 @@ import {
   UpdateDriverLocationDto,
 } from './dto/availability.dto.js';
 import { DriverDashboardDto } from './dto/dashboard.dto.js';
+import { RequiresApprovedDriver } from '../../common/decorators/capability.decorator.js';
 
 @ApiTags('Driver Availability')
 @ApiBearerAuth()
-@Roles(UserRole.DRIVER)
+@RequiresApprovedDriver()
 @Controller({ path: 'mobile/driver', version: '1' })
 export class DriverAvailabilityController {
   constructor(

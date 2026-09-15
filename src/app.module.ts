@@ -7,6 +7,8 @@ import { AllExceptionsFilter } from './common/filters/all-exceptions.filter.js';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard.js';
 import { RateLimitGuard } from './common/guards/rate-limit.guard.js';
 import { RolesGuard } from './common/guards/roles.guard.js';
+import { CapabilityGuard } from './common/guards/capability.guard.js';
+import { StepUpGuard } from './modules/auth/step-up.guard.js';
 import { PermissionsGuard } from './modules/admin/permissions.guard.js';
 import { IdempotencyInterceptor } from './common/interceptors/idempotency.interceptor.js';
 import { ResponseInterceptor } from './common/interceptors/response.interceptor.js';
@@ -37,6 +39,7 @@ import { DriversModule } from './modules/drivers/drivers.module.js';
 import { HealthModule } from './modules/health/health.module.js';
 import { LocationsModule } from './modules/locations/locations.module.js';
 import { MaintenanceModule } from './modules/maintenance/maintenance.module.js';
+import { MeModule } from './modules/me/me.module.js';
 import { PricingModule } from './modules/pricing/pricing.module.js';
 import { PaymentsModule } from './modules/payments/payments.module.js';
 import { PromoCodesModule } from './modules/promo-codes/promo-codes.module.js';
@@ -69,6 +72,7 @@ import { VehicleTypesModule } from './modules/vehicle-types/vehicle-types.module
     CustomersModule,
     AddressesModule,
     DriversModule,
+    MeModule,
     VehicleTypesModule,
     LocationsModule,
     PricingModule,
@@ -95,6 +99,12 @@ import { VehicleTypesModule } from './modules/vehicle-types/vehicle-types.module
     // means `@RateLimit({ by: 'user' })` can see who is calling.
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
+    // Mobile routes gate on capability rather than role: one account may both
+    // order deliveries and drive, so what matters is which profiles it has.
+    { provide: APP_GUARD, useClass: CapabilityGuard },
+    // After the capability gate: only a caller who may reach a money route at
+    // all is asked whether they have just confirmed their password.
+    { provide: APP_GUARD, useClass: StepUpGuard },
     // After RolesGuard: the role gate decides you are an operator, this decides
     // which operator actions you may take.
     { provide: APP_GUARD, useClass: PermissionsGuard },

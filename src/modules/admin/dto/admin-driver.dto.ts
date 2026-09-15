@@ -24,7 +24,9 @@ import {
 
 export class AdminDriverQueryDto extends PageQueryDto {
   @ApiPropertyOptional({ enum: DriverApprovalStatus, isArray: true })
-  @Transform(({ value }) => (Array.isArray(value) ? value : value === undefined ? undefined : [value]))
+  @Transform(({ value }) =>
+    Array.isArray(value) ? value : value === undefined ? undefined : [value],
+  )
   @IsEnum(DriverApprovalStatus, { each: true })
   @IsOptional()
   approvalStatus?: DriverApprovalStatus[];
@@ -40,39 +42,54 @@ export class AdminDriverQueryDto extends PageQueryDto {
   @IsOptional()
   zoneId?: string;
 
-  @ApiPropertyOptional({ description: 'Only drivers whose primary vehicle is of this type.' })
+  @ApiPropertyOptional({
+    description: 'Only drivers whose primary vehicle is of this type.',
+  })
   @IsString()
   @MaxLength(32)
   @IsOptional()
   vehicleTypeId?: string;
 
-  @ApiPropertyOptional({ description: 'Matches a name, phone number or plate number.', example: 'Sopheak' })
+  @ApiPropertyOptional({
+    description: 'Matches a name, phone number or plate number.',
+    example: 'Sopheak',
+  })
   @IsString()
   @MaxLength(120)
   @IsOptional()
   search?: string;
 
   @ApiPropertyOptional({
-    description: 'Only drivers with at least one document waiting for review — the approval queue.',
+    description:
+      'Only drivers with at least one document waiting for review — the approval queue.',
   })
   @Transform(({ value }) => value === true || value === 'true')
   @IsBoolean()
   @IsOptional()
   awaitingReview?: boolean;
 
-  @ApiPropertyOptional({ example: '2026-09-01', description: 'Signed up on or after this date.' })
+  @ApiPropertyOptional({
+    example: '2026-09-01',
+    description: 'Signed up on or after this date.',
+  })
   @IsDateString()
   @IsOptional()
   dateFrom?: string;
 
-  @ApiPropertyOptional({ example: '2026-09-30', description: 'Signed up on or before this date.' })
+  @ApiPropertyOptional({
+    example: '2026-09-30',
+    description: 'Signed up on or before this date.',
+  })
   @IsDateString()
   @IsOptional()
   dateTo?: string;
 }
 
 export class AdminReasonDto {
-  @ApiProperty({ example: 'Licence photograph does not match the submitted identity document' })
+  @ApiProperty({
+    example:
+      'Licence photograph does not match the submitted identity document',
+  })
   @IsString()
   @IsNotEmpty()
   @MaxLength(500)
@@ -91,10 +108,12 @@ export class AdminUpdateDriverDto {
 export class AdminReviewDocumentDto {
   @ApiProperty({
     enum: [DocumentReviewStatus.APPROVED, DocumentReviewStatus.REJECTED],
-    description: 'A review decides one way or the other; it cannot put a document back to pending.',
+    description:
+      'A review decides one way or the other; it cannot put a document back to pending.',
   })
   @IsIn([DocumentReviewStatus.APPROVED, DocumentReviewStatus.REJECTED])
-  status: typeof DocumentReviewStatus.APPROVED | typeof DocumentReviewStatus.REJECTED;
+  status:
+    typeof DocumentReviewStatus.APPROVED | typeof DocumentReviewStatus.REJECTED;
 
   @ApiPropertyOptional({
     example: 'Photograph is too blurred to read the expiry date',
@@ -106,10 +125,31 @@ export class AdminReviewDocumentDto {
   note?: string;
 }
 
+export class AdminReviewVehicleDto {
+  @ApiProperty({
+    enum: [DocumentReviewStatus.APPROVED, DocumentReviewStatus.REJECTED],
+    description:
+      'A review decides one way or the other; it cannot put a vehicle back to pending.',
+  })
+  @IsIn([DocumentReviewStatus.APPROVED, DocumentReviewStatus.REJECTED])
+  status:
+    typeof DocumentReviewStatus.APPROVED | typeof DocumentReviewStatus.REJECTED;
+
+  @ApiPropertyOptional({
+    example: 'Plate number does not match the registration photo',
+    description: 'Required when rejecting — the driver is shown this.',
+  })
+  @IsString()
+  @MaxLength(500)
+  @IsOptional()
+  note?: string;
+}
+
 export class AdminAssignZonesDto {
   @ApiProperty({
     type: [String],
-    description: 'Replaces the driver’s zones outright. An empty array clears them.',
+    description:
+      'Replaces the driver’s zones outright. An empty array clears them.',
     example: ['zne1a2b3c4d5e6f7g8h9i0j1'],
   })
   @IsArray()
@@ -183,8 +223,19 @@ export class AdminDriverDocumentDto {
   })
   required: boolean;
 
-  @ApiPropertyOptional({ nullable: true, description: 'A time-limited link to the uploaded file.' })
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'A time-limited link to the uploaded file.',
+  })
   fileUrl: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    example: '010203040',
+    description:
+      'The number the driver typed for this document, in full, to check against the photo. Null for documents submitted before numbers were asked for.',
+  })
+  documentNumber: string | null;
 
   @ApiPropertyOptional({ nullable: true })
   reviewNote: string | null;
@@ -195,7 +246,11 @@ export class AdminDriverDocumentDto {
   @ApiPropertyOptional({ nullable: true })
   reviewedAt: string | null;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({
+    nullable: true,
+    example: '2031-05-20',
+    description: 'The expiry date the driver entered for this document, as YYYY-MM-DD.',
+  })
   expiresAt: string | null;
 
   @ApiProperty()
@@ -209,10 +264,16 @@ export class AdminWalletBalanceDto {
   @ApiProperty({ example: 128_500, description: 'Minor units.' })
   balance: number;
 
-  @ApiProperty({ example: 20_000, description: 'Held against withdrawals in flight.' })
+  @ApiProperty({
+    example: 20_000,
+    description: 'Held against withdrawals in flight.',
+  })
   reservedBalance: number;
 
-  @ApiProperty({ example: 108_500, description: 'Withdrawable now. Never negative.' })
+  @ApiProperty({
+    example: 108_500,
+    description: 'Withdrawable now. Never negative.',
+  })
   availableBalance: number;
 
   @ApiProperty({
@@ -242,7 +303,10 @@ export class AdminDriverRowDto {
   @ApiProperty({ enum: DriverApprovalStatus })
   approvalStatus: DriverApprovalStatus;
 
-  @ApiProperty({ enum: UserStatus, description: 'Whether the account itself can sign in.' })
+  @ApiProperty({
+    enum: UserStatus,
+    description: 'Whether the account itself can sign in.',
+  })
   accountStatus: UserStatus;
 
   @ApiProperty({ enum: DriverAvailabilityStatus })
@@ -250,7 +314,8 @@ export class AdminDriverRowDto {
 
   @ApiProperty({
     example: true,
-    description: 'Whether the matcher can actually see this driver, from the live presence store.',
+    description:
+      'Whether the matcher can actually see this driver, from the live presence store.',
   })
   onlineNow: boolean;
 
@@ -274,14 +339,18 @@ export class AdminDriverRowDto {
 
   @ApiProperty({
     example: 7_400,
-    description: 'Jobs accepted as a share of jobs offered, in basis points. 7400 is 74%.',
+    description:
+      'Jobs accepted as a share of jobs offered, in basis points. 7400 is 74%.',
   })
   acceptanceRateBps: number;
 
   @ApiProperty({ type: [AdminZoneSummaryDto] })
   zones: AdminZoneSummaryDto[];
 
-  @ApiProperty({ example: 0, description: 'Documents waiting for a review decision.' })
+  @ApiProperty({
+    example: 0,
+    description: 'Documents waiting for a review decision.',
+  })
   documentsAwaitingReview: number;
 
   @ApiProperty()
@@ -306,7 +375,8 @@ export class AdminDriverDetailDto extends AdminDriverRowDto {
 
   @ApiProperty({
     example: false,
-    description: 'Whether the server would currently let this driver go online.',
+    description:
+      'Whether the server would currently let this driver go online.',
   })
   canGoOnline: boolean;
 
@@ -323,7 +393,10 @@ export class AdminDriverDetailDto extends AdminDriverRowDto {
   @ApiProperty({ type: [AdminDriverDocumentDto] })
   documents: AdminDriverDocumentDto[];
 
-  @ApiProperty({ type: [AdminWalletBalanceDto], description: 'One per currency the driver has earned in.' })
+  @ApiProperty({
+    type: [AdminWalletBalanceDto],
+    description: 'One per currency the driver has earned in.',
+  })
   wallets: AdminWalletBalanceDto[];
 
   @ApiPropertyOptional({ nullable: true, example: 11.5564 })
@@ -335,6 +408,9 @@ export class AdminDriverDetailDto extends AdminDriverRowDto {
   @ApiPropertyOptional({ nullable: true })
   lastSeenAt: string | null;
 
-  @ApiProperty({ example: 1, description: 'Deliveries this driver is holding right now.' })
+  @ApiProperty({
+    example: 1,
+    description: 'Deliveries this driver is holding right now.',
+  })
   activeDeliveries: number;
 }

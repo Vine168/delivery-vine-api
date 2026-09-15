@@ -5,12 +5,10 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
 import { Idempotent } from '../../common/decorators/idempotent.decorator.js';
 import { RateLimit } from '../../common/decorators/rate-limit.decorator.js';
 import { ResponseCode as ResponseCodeMeta } from '../../common/decorators/response-code.decorator.js';
-import { Roles } from '../../common/decorators/roles.decorator.js';
 import { ResponseCode } from '../../common/constants/response-codes.js';
 import { IdParamDto } from '../../common/dto/id-param.dto.js';
 import type { PaginatedResult } from '../../common/interfaces/paginated.interface.js';
 import type { AuthenticatedUser } from '../../common/interfaces/authenticated-user.interface.js';
-import { UserRole } from '../../generated/prisma/enums.js';
 import { DeliveryQuoteService } from './delivery-quote.service.js';
 import { DeliveryTrackingService } from './delivery-tracking.service.js';
 import { DeliveryService } from './delivery.service.js';
@@ -23,10 +21,11 @@ import {
   ListDeliveriesQueryDto,
   QuoteDto,
 } from './dto/delivery-response.dto.js';
+import { RequiresCustomer } from '../../common/decorators/capability.decorator.js';
 
 @ApiTags('Customer Delivery')
 @ApiBearerAuth()
-@Roles(UserRole.CUSTOMER)
+@RequiresCustomer()
 @Controller({ path: 'mobile/customer/deliveries', version: '1' })
 export class CustomerDeliveriesController {
   constructor(

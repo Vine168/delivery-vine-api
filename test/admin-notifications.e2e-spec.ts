@@ -58,9 +58,11 @@ describe('Back office — notifications (e2e)', () => {
         .send({ audience: 'ALL_CUSTOMERS' })
         .expect(200);
 
+      // Three, not two: a driver holds a customer profile as well, and orders
+      // deliveries like anyone else, so a customer campaign reaches them too.
       expect(customers.body.data).toMatchObject({
         audience: 'ALL_CUSTOMERS',
-        recipientCount: 2,
+        recipientCount: 3,
         reachableByPush: 0,
       });
 

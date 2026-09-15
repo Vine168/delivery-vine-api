@@ -15,10 +15,10 @@ import { RedisService } from '../../../redis/redis.service.js';
  * phone number. Nothing counted failures against the account itself, so a
  * targeted guess had no ceiling at all.
  *
- * The key is the account, not the person. One phone number holds a separate
- * customer, driver and back-office account, and they lock independently —
- * otherwise anyone could lock a driver out of earning simply by guessing at
- * their customer password.
+ * The key is the account, not the person. One phone number holds a mobile
+ * account — both apps sign in to it — and, separately, a back-office account,
+ * and the two lock independently: guessing at someone's app password must not
+ * lock an operator out of the dashboard.
  */
 @Injectable()
 export class LoginAttemptsService {

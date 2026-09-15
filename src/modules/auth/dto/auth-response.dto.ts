@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { UserRole, UserStatus } from '../../../generated/prisma/enums.js';
+import { DriverApprovalStatus, UserRole, UserStatus } from '../../../generated/prisma/enums.js';
 
 export class AuthTokensDto {
   @ApiProperty({ example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...' })
@@ -31,17 +31,46 @@ export class AuthUserDto {
   @ApiProperty({ enum: UserStatus })
   status: UserStatus;
 
-  @ApiProperty({ example: 'Sok Dara' })
+  @ApiProperty({
+    example: 'Sok Dara',
+    description:
+      'The name for the app that signed in: in the driver app the one the driver was approved under, in the customer app the one the person chose.',
+  })
   fullName: string;
 
   @ApiPropertyOptional({ nullable: true })
   avatarUrl: string | null;
 
-  @ApiPropertyOptional({ nullable: true, description: 'Set for CUSTOMER accounts.' })
+  @ApiPropertyOptional({ nullable: true, description: 'Every mobile account has one: it can always order.' })
   customerId: string | null;
 
-  @ApiPropertyOptional({ nullable: true, description: 'Set for DRIVER accounts.' })
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'Set once the account has applied to drive, whatever the review decided. Null until then.',
+  })
   driverId: string | null;
+
+  @ApiProperty({
+    example: false,
+    description: 'True while an operator has stopped this account booking. The driver side is unaffected.',
+  })
+  customerSuspended: boolean;
+
+  @ApiPropertyOptional({
+    enum: DriverApprovalStatus,
+    nullable: true,
+    description:
+      'Where the driver side stands, so the driver app can pick its first screen without another call. Null until the account applies to drive.',
+  })
+  driverApprovalStatus: DriverApprovalStatus | null;
+}
+
+export class StepUpTokenDto {
+  @ApiProperty({ description: 'Send as the X-Step-Up-Token header.' })
+  stepUpToken: string;
+
+  @ApiProperty({ example: '2026-09-15T10:05:00.000Z' })
+  expiresAt: string;
 }
 
 export class AuthSessionDto {

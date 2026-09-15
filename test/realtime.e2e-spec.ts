@@ -122,10 +122,11 @@ describe('Realtime (e2e)', () => {
       await expect(connect(customer.accessToken)).rejects.toThrow();
     });
 
-    it('puts a customer in their own room only', async () => {
+    it('puts a customer in their own rooms only', async () => {
       const { rooms } = await connect(customer.accessToken);
 
-      expect(rooms).toEqual([`user:${customer.userId}`]);
+      // Their user room and its customer-app room — no driver room.
+      expect(rooms).toEqual([`user:${customer.userId}`, `user:${customer.userId}:CUSTOMER`]);
     });
 
     it('puts a driver in both their user and driver rooms', async () => {
@@ -141,6 +142,18 @@ describe('Realtime (e2e)', () => {
       await http(harness).post(`${API}/mobile/driver/jobs/${deliveryId}/accept`).set(bearer(driver)).expect(200);
 
       const { rooms } = await connect(driver.accessToken);
+      expect(rooms).toContain(`delivery:${deliveryId}`);
+    });
+
+    it('rejoins a booking of their own for someone who also drives', async () => {
+      // One account, both sides. Being a driver must not cost them the live
+      // updates on a delivery they booked.
+      await harness.expireOtpCooldowns();
+      const alsoDrives = await readyDriver(harness, NEARBY, customer.phone);
+      const deliveryId = await book();
+
+      const { rooms } = await connect(alsoDrives.accessToken);
+      expect(rooms).toContain(`driver:${alsoDrives.driverId}`);
       expect(rooms).toContain(`delivery:${deliveryId}`);
     });
   });

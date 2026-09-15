@@ -1,7 +1,14 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createTestHarness, type TestHarness } from './app-harness.js';
 import { WalletService } from '../src/modules/wallets/wallet.service.js';
-import { API, activate, completedDelivery, http, readyDriver, type ActivatedAccount } from './helpers.js';
+import {
+  API,
+  activate,
+  completedDelivery,
+  http,
+  readyDriver,
+  type ActivatedAccount,
+} from './helpers.js';
 
 const NEARBY = { latitude: 11.557, longitude: 104.929 };
 
@@ -30,23 +37,41 @@ describe('Wallet, earnings and withdrawals (e2e)', () => {
     harness.map.shouldFail = false;
     customer = await activate(harness);
     driver = await readyDriver(harness, NEARBY);
-    vehicleTypeId = (await harness.prisma.vehicleType.findFirstOrThrow({ select: { id: true } })).id;
+    vehicleTypeId = (
+      await harness.prisma.vehicleType.findFirstOrThrow({
+        select: { id: true },
+      })
+    ).id;
   });
 
   const asDriver = () => ({ Authorization: `Bearer ${driver.accessToken}` });
-  const asCustomer = () => ({ Authorization: `Bearer ${customer.accessToken}` });
+  const asCustomer = () => ({
+    Authorization: `Bearer ${customer.accessToken}`,
+  });
 
   const wallet = async () => {
-    const response = await http(harness).get(`${API}/mobile/driver/wallet`).set(asDriver()).expect(200);
-    return response.body.data[0] as { balance: number; reservedBalance: number; availableBalance: number };
+    const response = await http(harness)
+      .get(`${API}/mobile/driver/wallet`)
+      .set(asDriver())
+      .expect(200);
+    return response.body.data[0] as {
+      balance: number;
+      reservedBalance: number;
+      availableBalance: number;
+    };
   };
 
   /** Puts money in the wallet the way a completed delivery would. */
-  async function topUp(amount: number): Promise<void> {
+  async function topUp(
+    amount: number,
+    targetDriver: ActivatedAccount = driver,
+  ): Promise<void> {
     // Wallets are created on first credit, so a driver who has not earned yet
     // has none.
     const current = await harness.prisma.wallet.upsert({
-      where: { userId_currency: { userId: driver.userId, currency: 'KHR' } },
+      where: {
+        userId_currency: { userId: targetDriver.userId, currency: 'KHR' },
+      },
       create: { userId: driver.userId, currency: 'KHR' },
       update: {},
     });
@@ -74,11 +99,21 @@ describe('Wallet, earnings and withdrawals (e2e)', () => {
   }
 
   const addBankDetails = () =>
-    http(harness).put(`${API}/mobile/driver/withdrawal-settings`).set(asDriver()).send(BANK_DETAILS).expect(200);
+    http(harness)
+      .put(`${API}/mobile/driver/withdrawal-settings`)
+      .set(asDriver())
+      .send(BANK_DETAILS)
+      .expect(200);
 
   describe('earning from a delivery', () => {
     it('credits the wallet when a delivery completes', async () => {
-      const delivery = await completedDelivery(harness, customer, driver, vehicleTypeId, 'ABA_KHQR');
+      const delivery = await completedDelivery(
+        harness,
+        customer,
+        driver,
+        vehicleTypeId,
+        'ABA_KHQR',
+      );
 
       const balances = await wallet();
       expect(balances.balance).toBe(delivery.netAmount);
@@ -102,7 +137,13 @@ describe('Wallet, earnings and withdrawals (e2e)', () => {
     });
 
     it('moves the earning from PENDING to AVAILABLE and links the ledger entry', async () => {
-      const delivery = await completedDelivery(harness, customer, driver, vehicleTypeId, 'ABA_KHQR');
+      const delivery = await completedDelivery(
+        harness,
+        customer,
+        driver,
+        vehicleTypeId,
+        'ABA_KHQR',
+      );
 
       const earning = await harness.prisma.driverEarning.findUniqueOrThrow({
         where: { deliveryId: delivery.deliveryId },
@@ -113,11 +154,18 @@ describe('Wallet, earnings and withdrawals (e2e)', () => {
     });
 
     it('pays for a delivery exactly once, however many times settlement runs', async () => {
-      const delivery = await completedDelivery(harness, customer, driver, vehicleTypeId, 'ABA_KHQR');
+      const delivery = await completedDelivery(
+        harness,
+        customer,
+        driver,
+        vehicleTypeId,
+        'ABA_KHQR',
+      );
 
       // A retried job, a duplicated event, a manual replay — all the same.
       const earnings = harness.app.get(
-        (await import('../src/modules/earnings/earnings.service.js')).EarningsService,
+        (await import('../src/modules/earnings/earnings.service.js'))
+          .EarningsService,
       );
       await earnings.settle(delivery.deliveryId);
       await earnings.settle(delivery.deliveryId);
@@ -132,8 +180,20 @@ describe('Wallet, earnings and withdrawals (e2e)', () => {
     });
 
     it('summarises today’s earnings from the snapshots', async () => {
-      const first = await completedDelivery(harness, customer, driver, vehicleTypeId, 'ABA_KHQR');
-      const second = await completedDelivery(harness, customer, driver, vehicleTypeId, 'ABA_KHQR');
+      const first = await completedDelivery(
+        harness,
+        customer,
+        driver,
+        vehicleTypeId,
+        'ABA_KHQR',
+      );
+      const second = await completedDelivery(
+        harness,
+        customer,
+        driver,
+        vehicleTypeId,
+        'ABA_KHQR',
+      );
 
       const summary = await http(harness)
         .get(`${API}/mobile/driver/earnings/summary?period=today`)
@@ -141,14 +201,22 @@ describe('Wallet, earnings and withdrawals (e2e)', () => {
         .expect(200);
 
       expect(summary.body.data.deliveryCount).toBe(2);
-      expect(summary.body.data.netAmount).toBe(first.netAmount + second.netAmount);
+      expect(summary.body.data.netAmount).toBe(
+        first.netAmount + second.netAmount,
+      );
       expect(summary.body.data.averagePerDelivery).toBe(
         Math.round((first.netAmount + second.netAmount) / 2),
       );
     });
 
     it('shows the split on an individual earning', async () => {
-      const delivery = await completedDelivery(harness, customer, driver, vehicleTypeId, 'ABA_KHQR');
+      const delivery = await completedDelivery(
+        harness,
+        customer,
+        driver,
+        vehicleTypeId,
+        'ABA_KHQR',
+      );
 
       const history = await http(harness)
         .get(`${API}/mobile/driver/earnings/history`)
@@ -158,7 +226,9 @@ describe('Wallet, earnings and withdrawals (e2e)', () => {
       const earning = history.body.data[0];
       expect(earning.bookingCode).toBe(delivery.bookingCode);
       expect(earning.deliveryAmount).toBeGreaterThan(earning.netAmount);
-      expect(earning.deliveryAmount - earning.commissionAmount).toBeGreaterThanOrEqual(earning.netAmount);
+      expect(
+        earning.deliveryAmount - earning.commissionAmount,
+      ).toBeGreaterThanOrEqual(earning.netAmount);
 
       const detail = await http(harness)
         .get(`${API}/mobile/driver/earnings/${earning.id}`)
@@ -168,7 +238,13 @@ describe('Wallet, earnings and withdrawals (e2e)', () => {
     });
 
     it('will not show one driver another driver’s earnings', async () => {
-      await completedDelivery(harness, customer, driver, vehicleTypeId, 'ABA_KHQR');
+      await completedDelivery(
+        harness,
+        customer,
+        driver,
+        vehicleTypeId,
+        'ABA_KHQR',
+      );
       const other = await readyDriver(harness, NEARBY);
 
       const history = await http(harness)
@@ -182,14 +258,31 @@ describe('Wallet, earnings and withdrawals (e2e)', () => {
 
   describe('the ledger', () => {
     it('keeps balanceBefore and balanceAfter consistent across every entry', async () => {
-      await completedDelivery(harness, customer, driver, vehicleTypeId, 'ABA_KHQR');
-      await completedDelivery(harness, customer, driver, vehicleTypeId, 'ABA_KHQR');
+      await completedDelivery(
+        harness,
+        customer,
+        driver,
+        vehicleTypeId,
+        'ABA_KHQR',
+      );
+      await completedDelivery(
+        harness,
+        customer,
+        driver,
+        vehicleTypeId,
+        'ABA_KHQR',
+      );
       await topUp(50_000);
 
       const entries = await harness.prisma.walletTransaction.findMany({
         where: { wallet: { userId: driver.userId } },
         orderBy: { createdAt: 'asc' },
-        select: { direction: true, amount: true, balanceBefore: true, balanceAfter: true },
+        select: {
+          direction: true,
+          amount: true,
+          balanceBefore: true,
+          balanceAfter: true,
+        },
       });
 
       expect(entries.length).toBeGreaterThanOrEqual(3);
@@ -197,7 +290,8 @@ describe('Wallet, earnings and withdrawals (e2e)', () => {
       let running = 0;
       for (const entry of entries) {
         expect(entry.balanceBefore).toBe(running);
-        const delta = entry.direction === 'CREDIT' ? entry.amount : -entry.amount;
+        const delta =
+          entry.direction === 'CREDIT' ? entry.amount : -entry.amount;
         expect(entry.balanceAfter).toBe(running + delta);
         running = entry.balanceAfter;
       }
@@ -215,7 +309,9 @@ describe('Wallet, earnings and withdrawals (e2e)', () => {
       `;
       expect(Number(constraint[0].count)).toBe(1);
 
-      const current = await harness.prisma.wallet.findFirst({ where: { userId: driver.userId } });
+      const current = await harness.prisma.wallet.findFirst({
+        where: { userId: driver.userId },
+      });
       if (current) {
         await expect(
           harness.prisma.wallet.update({
@@ -228,23 +324,23 @@ describe('Wallet, earnings and withdrawals (e2e)', () => {
 
     it('refuses to overdraw on a withdrawal, however the balance got there', async () => {
       await topUp(10_000);
-      const current = await harness.prisma.wallet.findFirstOrThrow({ where: { userId: driver.userId } });
+      const current = await harness.prisma.wallet.findFirstOrThrow({
+        where: { userId: driver.userId },
+      });
 
       await expect(
         harness.prisma.$transaction((tx) =>
-          harness.app
-            .get(WalletService)
-            .debit(
-              {
-                userId: driver.userId,
-                currency: 'KHR',
-                type: 'WITHDRAWAL',
-                amount: current.balance + 1,
-                referenceType: 'test-overdraw',
-                referenceId: `overdraw-${Date.now()}`,
-              },
-              tx,
-            ),
+          harness.app.get(WalletService).debit(
+            {
+              userId: driver.userId,
+              currency: 'KHR',
+              type: 'WITHDRAWAL',
+              amount: current.balance + 1,
+              referenceType: 'test-overdraw',
+              referenceId: `overdraw-${Date.now()}`,
+            },
+            tx,
+          ),
         ),
       ).rejects.toMatchObject({ code: 'INSUFFICIENT_BALANCE' });
     });
@@ -261,9 +357,10 @@ describe('Wallet, earnings and withdrawals (e2e)', () => {
         isComplete: true,
       });
 
-      const stored = await harness.prisma.driverPaymentSetting.findUniqueOrThrow({
-        where: { driverId: driver.driverId as string },
-      });
+      const stored =
+        await harness.prisma.driverPaymentSetting.findUniqueOrThrow({
+          where: { driverId: driver.driverId as string },
+        });
 
       expect(stored.accountNumberEnc).not.toContain('123456789');
       expect(JSON.stringify(response.body)).not.toContain('123456789');
@@ -282,11 +379,12 @@ describe('Wallet, earnings and withdrawals (e2e)', () => {
 
   describe('requesting a withdrawal', () => {
     it('refuses before bank details are set', async () => {
-      await topUp(100_000);
+      const noBankDriver = await activate(harness, 'DRIVER');
+      await topUp(100_000, noBankDriver);
 
       const response = await http(harness)
         .post(`${API}/mobile/driver/withdrawals`)
-        .set(asDriver())
+        .set({ Authorization: `Bearer ${noBankDriver.accessToken}` })
         .send({ amount: 50_000 })
         .expect(422);
 
@@ -351,7 +449,11 @@ describe('Wallet, earnings and withdrawals (e2e)', () => {
       await topUp(200_000);
       await addBankDetails();
 
-      await http(harness).post(`${API}/mobile/driver/withdrawals`).set(asDriver()).send({ amount: 50_000 }).expect(201);
+      await http(harness)
+        .post(`${API}/mobile/driver/withdrawals`)
+        .set(asDriver())
+        .send({ amount: 50_000 })
+        .expect(201);
 
       const second = await http(harness)
         .post(`${API}/mobile/driver/withdrawals`)
@@ -368,8 +470,14 @@ describe('Wallet, earnings and withdrawals (e2e)', () => {
 
       // Both ask for most of the balance at the same instant.
       const responses = await Promise.all([
-        http(harness).post(`${API}/mobile/driver/withdrawals`).set(asDriver()).send({ amount: 80_000 }),
-        http(harness).post(`${API}/mobile/driver/withdrawals`).set(asDriver()).send({ amount: 80_000 }),
+        http(harness)
+          .post(`${API}/mobile/driver/withdrawals`)
+          .set(asDriver())
+          .send({ amount: 80_000 }),
+        http(harness)
+          .post(`${API}/mobile/driver/withdrawals`)
+          .set(asDriver())
+          .send({ amount: 80_000 }),
       ]);
 
       const created = responses.filter((response) => response.status === 201);
@@ -454,7 +562,10 @@ describe('Wallet, earnings and withdrawals (e2e)', () => {
     it('gives the money back when a payout fails', async () => {
       const id = await openWithdrawal(50_000);
       await harness.withdrawals.markApproved(id);
-      await harness.withdrawals.markFailed(id, 'Bank rejected the account number');
+      await harness.withdrawals.markFailed(
+        id,
+        'Bank rejected the account number',
+      );
 
       const balances = await wallet();
       expect(balances.balance).toBe(200_000);
@@ -507,10 +618,18 @@ describe('Wallet, earnings and withdrawals (e2e)', () => {
         .set(asCustomer())
         .expect(200);
 
-      const cash = response.body.data.find((m: { method: string }) => m.method === 'CASH_ON_DELIVERY');
-      expect(cash).toMatchObject({ available: true, unavailableReason: null, prepaid: false });
+      const cash = response.body.data.find(
+        (m: { method: string }) => m.method === 'CASH_ON_DELIVERY',
+      );
+      expect(cash).toMatchObject({
+        available: true,
+        unavailableReason: null,
+        prepaid: false,
+      });
 
-      const khqr = response.body.data.find((m: { method: string }) => m.method === 'ABA_KHQR');
+      const khqr = response.body.data.find(
+        (m: { method: string }) => m.method === 'ABA_KHQR',
+      );
       expect(khqr.available).toBe(false);
       expect(khqr.unavailableReason).toContain('not configured');
     });
@@ -542,7 +661,9 @@ describe('Wallet, earnings and withdrawals (e2e)', () => {
         .expect(201);
 
       const response = await http(harness)
-        .post(`${API}/mobile/customer/deliveries/${booking.body.data.id}/payment`)
+        .post(
+          `${API}/mobile/customer/deliveries/${booking.body.data.id}/payment`,
+        )
         .set(asCustomer())
         .send({ method: 'ABA_KHQR' })
         .expect(422);
@@ -551,7 +672,12 @@ describe('Wallet, earnings and withdrawals (e2e)', () => {
     });
 
     it('records a cash payment and returns the same one when asked twice', async () => {
-      const delivery = await completedDelivery(harness, customer, driver, vehicleTypeId);
+      const delivery = await completedDelivery(
+        harness,
+        customer,
+        driver,
+        vehicleTypeId,
+      );
 
       const status = await http(harness)
         .get(`${API}/mobile/customer/deliveries/${delivery.deliveryId}/payment`)
@@ -561,7 +687,9 @@ describe('Wallet, earnings and withdrawals (e2e)', () => {
       // No payment record is created for cash — the delivery itself carries it.
       expect(status.body.code).toBe('PAYMENT_NOT_FOUND');
 
-      const paid = await harness.prisma.delivery.findUniqueOrThrow({ where: { id: delivery.deliveryId } });
+      const paid = await harness.prisma.delivery.findUniqueOrThrow({
+        where: { id: delivery.deliveryId },
+      });
       expect(paid.paymentStatus).toBe('PAID');
     });
   });

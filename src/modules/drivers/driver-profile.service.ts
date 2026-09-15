@@ -78,9 +78,15 @@ export class DriverProfileService {
   }
 
   async updateProfile(driverId: string, userId: string, dto: UpdateDriverProfileDto): Promise<DriverProfileDto> {
+    if (dto.fullName !== undefined) {
+      await this.assertNameEditable(driverId, dto.fullName);
+    }
+
     if (dto.email !== undefined && dto.email !== null) {
       const owner = await this.prisma.user.findFirst({
-        where: { email: dto.email, role: UserRole.DRIVER, deletedAt: null, NOT: { id: userId } },
+        // One mobile account per phone, so the email must be free across
+        // every mobile account rather than only among drivers.
+        where: { email: dto.email, role: UserRole.CUSTOMER, deletedAt: null, NOT: { id: userId } },
         select: { id: true },
       });
 
@@ -100,8 +106,31 @@ export class DriverProfileService {
     return this.getProfile(driverId);
   }
 
-  async setAvatar(driverId: string, userId: string, fileId: string): Promise<DriverProfileDto> {
+  /**
+   * A driver's name is the one on the ID they were approved on: it is what an
+   * operator checked, and what customers are shown when this driver comes to
+   * collect. Before approval it is theirs to correct; after, only support can
+   * change it (PATCH /admin/drivers/:id). Their customer name stays their own.
+   */
+  private async assertNameEditable(driverId: string, fullName: string): Promise<void> {
+    const driver = await this.prisma.driverProfile.findUniqueOrThrow({
+      where: { id: driverId },
+      select: { fullName: true, approvedAt: true },
+    });
+
+    // Sending back the name they already have is not a change.
+    if (driver.approvedAt && driver.fullName !== fullName) {
+      throw AppException.conflict(ResponseCode.DRIVER_NAME_LOCKED);
+    }
+  }
+
+  /** The check setAvatar() makes before it writes: the file is the caller's driver photo. */
+  async assertAvatarFile(userId: string, fileId: string): Promise<void> {
     await this.uploads.assertOwnedForPurpose(fileId, userId, [FilePurpose.DRIVER_AVATAR]);
+  }
+
+  async setAvatar(driverId: string, userId: string, fileId: string): Promise<DriverProfileDto> {
+    await this.assertAvatarFile(userId, fileId);
 
     const current = await this.prisma.driverProfile.findUniqueOrThrow({
       where: { id: driverId },
