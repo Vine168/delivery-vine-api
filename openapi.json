@@ -28,6 +28,9 @@
                       "DRIVER_AVATAR",
                       "VEHICLE_PHOTO",
                       "DRIVER_DOCUMENT",
+                      "NATIONAL_ID",
+                      "DRIVING_LICENSE",
+                      "CERTIFICATE_OF_REGISTRY",
                       "KHQR_IMAGE",
                       "PACKAGE_PHOTO",
                       "PROOF_OF_DELIVERY",
@@ -632,7 +635,7 @@
     },
     "/api/v1/auth/driver/register": {
       "post": {
-        "description": "Creates a pending driver account (approvalStatus PENDING_APPROVAL). Documents and a vehicle must be added before the driver can go online.",
+        "description": "Creates the same pending mobile account as customer registration, already enrolled as a driver (approvalStatus PENDING_APPROVAL) — one account serves both apps. Documents and a vehicle must be added before the driver can go online.",
         "operationId": "auth_registerDriver",
         "parameters": [],
         "requestBody": {
@@ -748,7 +751,7 @@
     },
     "/api/v1/auth/otp/send": {
       "post": {
-        "description": "Rate limited per IP and, inside the OTP service, per identifier. For PASSWORD_RESET the response is identical whether or not the account exists, so it cannot be used to discover registered numbers.",
+        "description": "Rate limited per IP and, inside the OTP service, per identifier. Only REGISTRATION and PASSWORD_RESET are accepted. A code is sent only when there is an account to spend it on — a pending registration, or an account to reset; otherwise the response looks the same and nothing is sent.",
         "operationId": "auth_sendOtp",
         "parameters": [],
         "requestBody": {
@@ -1266,7 +1269,7 @@
     },
     "/api/v1/auth/login": {
       "post": {
-        "description": "One phone number may hold both a customer and a driver account, so the app must state which role it is signing in as.",
+        "description": "One account serves both the customer and the driver app, so the mobile apps may omit role. Send it only to sign in to a back-office account.",
         "operationId": "auth_login",
         "parameters": [],
         "requestBody": {
@@ -1498,7 +1501,7 @@
     },
     "/api/v1/auth/logout": {
       "post": {
-        "description": "Revokes the refresh token and its family. Access tokens already issued stay valid until they expire — they are short-lived by design — so treat sign-out as ending the ability to refresh, not as an instant kill switch.",
+        "description": "Revokes this session and its refresh tokens, or every session with allDevices. Access tokens for a revoked session stop working on the next request, because every request checks that its session is still live.",
         "operationId": "auth_logout",
         "parameters": [],
         "requestBody": {
@@ -1644,6 +1647,189 @@
           }
         ],
         "summary": "Sign out of this session, or every session",
+        "tags": [
+          "Authentication"
+        ]
+      }
+    },
+    "/api/v1/auth/step-up": {
+      "post": {
+        "description": "Returns a token for the X-Step-Up-Token header, good for five minutes on this session only. Changing bank details and requesting a payout ask for it. A wrong password answers 403 INVALID_CREDENTIALS — not 401, because the session itself is fine — and counts towards the same lockout as signing in.",
+        "operationId": "auth_stepUp",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StepUpDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Password confirmed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "code": {
+                      "type": "string",
+                      "example": "STEP_UP_CONFIRMED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Password confirmed."
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/StepUpTokenDto"
+                    },
+                    "meta": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "code": {
+                      "type": "string",
+                      "example": "UNAUTHORIZED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Authentication is required."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "nullable": true,
+                      "items": {
+                        "type": "object"
+                      },
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Phone number or password is incorrect.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "code": {
+                      "type": "string",
+                      "example": "INVALID_CREDENTIALS"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Phone number or password is incorrect."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "nullable": true,
+                      "items": {
+                        "type": "object"
+                      },
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many failed sign-in attempts. Please try again shortly.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "code": {
+                      "type": "string",
+                      "example": "ACCOUNT_TEMPORARILY_LOCKED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Too many failed sign-in attempts. Please try again shortly."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "nullable": true,
+                      "items": {
+                        "type": "object"
+                      },
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected error occurred. Please try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "code": {
+                      "type": "string",
+                      "example": "INTERNAL_ERROR"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "An unexpected error occurred. Please try again."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "nullable": true,
+                      "items": {
+                        "type": "object"
+                      },
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Confirm your password before a money action",
         "tags": [
           "Authentication"
         ]
@@ -4835,7 +5021,7 @@
         ]
       },
       "patch": {
-        "description": "Only the display name. Phone numbers are identity here — one phone holds one driver account — so they are changed through account recovery, not by an operator editing a field.",
+        "description": "Only the name. Once a driver is approved this is the only way to change it: it must match the ID they were approved on, so they cannot edit it themselves. Phone numbers are identity here — one phone holds one account — so they are changed through account recovery, not by an operator editing a field.",
         "operationId": "adminDrivers_update",
         "parameters": [
           {
@@ -6323,6 +6509,240 @@
         ]
       }
     },
+    "/api/v1/admin/drivers/{id}/vehicles/{vehicleId}/review": {
+      "post": {
+        "description": "Rejecting a vehicle keeps the driver offline until it is fixed and reviewed again. An approved vehicle is required before the admin can approve the driver.",
+        "operationId": "adminDrivers_reviewVehicle",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "vehicleId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminReviewVehicleDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Document reviewed successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "code": {
+                      "type": "string",
+                      "example": "DOCUMENT_REVIEWED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Document reviewed successfully."
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/AdminDriverVehicleDto"
+                      }
+                    },
+                    "meta": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_ERROR"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Validation failed."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "nullable": true,
+                      "items": {
+                        "type": "object"
+                      },
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "code": {
+                      "type": "string",
+                      "example": "UNAUTHORIZED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Authentication is required."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "nullable": true,
+                      "items": {
+                        "type": "object"
+                      },
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Your account type cannot access this resource.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "code": {
+                      "type": "string",
+                      "example": "ROLE_NOT_ALLOWED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Your account type cannot access this resource."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "nullable": true,
+                      "items": {
+                        "type": "object"
+                      },
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Driver vehicle not found successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "code": {
+                      "type": "string",
+                      "example": "DRIVER_VEHICLE_NOT_FOUND"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Driver vehicle not found."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "nullable": true,
+                      "items": {
+                        "type": "object"
+                      },
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected error occurred. Please try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "code": {
+                      "type": "string",
+                      "example": "INTERNAL_ERROR"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "An unexpected error occurred. Please try again."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "nullable": true,
+                      "items": {
+                        "type": "object"
+                      },
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Accept or refuse one registered vehicle",
+        "tags": [
+          "Admin — Drivers"
+        ]
+      }
+    },
     "/api/v1/admin/drivers/{id}/zones": {
       "put": {
         "description": "Replaces the assignment outright. An empty list clears it.",
@@ -6521,7 +6941,7 @@
     },
     "/api/v1/admin/customers": {
       "get": {
-        "description": "Searchable by name or phone number, filterable by account status and sign-up date.",
+        "description": "Searchable by name or phone number, filterable by account status, sign-up date and whether they have ever booked. Every driver holds a customer profile, so `hasOrdered=true` is the list of real customers.",
         "operationId": "adminCustomers_findAll",
         "parameters": [
           {
@@ -6549,6 +6969,7 @@
             "name": "status",
             "required": false,
             "in": "query",
+            "description": "SUSPENDED matches customers stopped from booking.",
             "schema": {
               "type": "array",
               "items": {
@@ -6570,6 +6991,15 @@
             "schema": {
               "example": "012345",
               "type": "string"
+            }
+          },
+          {
+            "name": "hasOrdered",
+            "required": false,
+            "in": "query",
+            "description": "True for customers who have booked at least once, false for those who never have. Every driver holds a customer profile, so without it the list includes every driver too.",
+            "schema": {
+              "type": "boolean"
             }
           },
           {
@@ -6761,6 +7191,7 @@
             "name": "status",
             "required": false,
             "in": "query",
+            "description": "SUSPENDED matches customers stopped from booking.",
             "schema": {
               "type": "array",
               "items": {
@@ -6782,6 +7213,15 @@
             "schema": {
               "example": "012345",
               "type": "string"
+            }
+          },
+          {
+            "name": "hasOrdered",
+            "required": false,
+            "in": "query",
+            "description": "True for customers who have booked at least once, false for those who never have. Every driver holds a customer profile, so without it the list includes every driver too.",
+            "schema": {
+              "type": "boolean"
             }
           },
           {
@@ -7133,7 +7573,7 @@
     },
     "/api/v1/admin/customers/{id}/suspend": {
       "post": {
-        "description": "Revokes every open session and blocks login. Deliveries already in motion are left to finish — the driver is owed for them, and stopping them would punish everyone except the person being suspended.",
+        "description": "Closes the booking side only: their booking endpoints answer 403 CUSTOMER_BOOKING_SUSPENDED. One account serves both apps, so the person stays signed in and, if they also drive, keeps driving — that side is suspended separately under /admin/drivers. Deliveries already in motion are left to finish — the driver is owed for them, and stopping them would punish everyone except the person being suspended.",
         "operationId": "adminCustomers_suspend",
         "parameters": [
           {
@@ -7349,7 +7789,7 @@
             "bearer": []
           }
         ],
-        "summary": "Stop a customer booking and signing in",
+        "summary": "Stop a customer booking",
         "tags": [
           "Admin — Customers"
         ]
@@ -18974,6 +19414,7 @@
                 "WALLET_CREDITED",
                 "DOCUMENT_REVIEWED",
                 "ACCOUNT_STATUS_CHANGED",
+                "NEW_SIGN_IN",
                 "CHAT_MESSAGE",
                 "PROMOTION",
                 "SYSTEM_ANNOUNCEMENT"
@@ -21549,6 +21990,422 @@
         ]
       }
     },
+    "/api/v1/mobile/driver/application": {
+      "post": {
+        "description": "Takes every part of the form in one body and hands it in for review — the only way an account becomes a driver, and the same account keeps ordering as a customer throughout. Upload the files first: each file id comes from POST /mobile/uploads with the purpose its part names, and any mobile account may upload them. Every part is checked before anything is saved, so a refused form — a wrong file, an inactive vehicle type, an expired document — leaves the account exactly as it was; correct the field and send the form again. On a resend, a document whose file, number and expiry have not changed is left as it is, and so is a vehicle whose details have not. Resending a rejected application puts it back to PENDING_APPROVAL for review; a suspended driver cannot resubmit. Once approved, a driver changes individual details through the per-step endpoints.",
+        "operationId": "drivers_submitApplication",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubmitDriverApplicationDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Your application has been submitted for review.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "code": {
+                      "type": "string",
+                      "example": "DRIVER_APPLICATION_SUBMITTED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Your application has been submitted for review."
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/DriverApplicationDto"
+                    },
+                    "meta": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed.\n\nA file id is not yours, or has the wrong purpose.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "code": {
+                      "type": "string",
+                      "example": "FILE_NOT_FOUND"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "File not found."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "nullable": true,
+                      "items": {
+                        "type": "object"
+                      },
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "code": {
+                      "type": "string",
+                      "example": "UNAUTHORIZED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Authentication is required."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "nullable": true,
+                      "items": {
+                        "type": "object"
+                      },
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Driver suspended successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "code": {
+                      "type": "string",
+                      "example": "DRIVER_SUSPENDED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Driver suspended."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "nullable": true,
+                      "items": {
+                        "type": "object"
+                      },
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Vehicle type not found successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "code": {
+                      "type": "string",
+                      "example": "VEHICLE_TYPE_NOT_FOUND"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Vehicle type not found."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "nullable": true,
+                      "items": {
+                        "type": "object"
+                      },
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "This driver is already approved.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "code": {
+                      "type": "string",
+                      "example": "DRIVER_ALREADY_APPROVED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "This driver is already approved."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "nullable": true,
+                      "items": {
+                        "type": "object"
+                      },
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Vehicle type inactive successfully.\n\nThis document has already expired. Please use one that is still valid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "code": {
+                      "type": "string",
+                      "example": "DRIVER_DOCUMENT_EXPIRED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "This document has already expired. Please use one that is still valid."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "nullable": true,
+                      "items": {
+                        "type": "object"
+                      },
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected error occurred. Please try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "code": {
+                      "type": "string",
+                      "example": "INTERNAL_ERROR"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "An unexpected error occurred. Please try again."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "nullable": true,
+                      "items": {
+                        "type": "object"
+                      },
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Submit the whole driver application",
+        "tags": [
+          "Driver Profile"
+        ]
+      },
+      "get": {
+        "description": "Every row the application screen shows, already decided: what it is called, whether it is required, how far along it is, and where to submit it. One call — the app does not have to stitch the profile, the vehicle and the bank details together, nor decide for itself which blocker belongs to which row. An account that has not applied yet gets a blank form: approvalStatus null, every step NOT_SUBMITTED.",
+        "operationId": "drivers_getApplication",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Application fetched successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "code": {
+                      "type": "string",
+                      "example": "DRIVER_APPLICATION_FETCHED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Application fetched successfully."
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/DriverApplicationDto"
+                    },
+                    "meta": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "code": {
+                      "type": "string",
+                      "example": "UNAUTHORIZED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Authentication is required."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "nullable": true,
+                      "items": {
+                        "type": "object"
+                      },
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Your account type cannot access this resource.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "code": {
+                      "type": "string",
+                      "example": "ROLE_NOT_ALLOWED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Your account type cannot access this resource."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "nullable": true,
+                      "items": {
+                        "type": "object"
+                      },
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected error occurred. Please try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "code": {
+                      "type": "string",
+                      "example": "INTERNAL_ERROR"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "An unexpected error occurred. Please try again."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "nullable": true,
+                      "items": {
+                        "type": "object"
+                      },
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The driver application screen",
+        "tags": [
+          "Driver Profile"
+        ]
+      }
+    },
     "/api/v1/mobile/driver/profile": {
       "get": {
         "description": "Includes `readiness`: whether the driver may go online, and the exact blockers if not. The driver app should render this as the onboarding checklist.",
@@ -21691,7 +22548,7 @@
         ]
       },
       "patch": {
-        "description": "Approval status and ratings are set by the platform and cannot be changed here.",
+        "description": "Approval status and ratings are set by the platform and cannot be changed here. Neither can the name once the driver is approved: it must match the ID they were approved on.",
         "operationId": "drivers_updateProfile",
         "parameters": [],
         "requestBody": {
@@ -21830,7 +22687,7 @@
             }
           },
           "409": {
-            "description": "That email address is already in use.",
+            "description": "That email address is already in use.\n\nYour name is the one on the ID you were approved with. Please contact support to change it.",
             "content": {
               "application/json": {
                 "schema": {
@@ -21841,11 +22698,11 @@
                     },
                     "code": {
                       "type": "string",
-                      "example": "CONFLICT"
+                      "example": "DRIVER_NAME_LOCKED"
                     },
                     "message": {
                       "type": "string",
-                      "example": "The request conflicts with the current state of the resource."
+                      "example": "Your name is the one on the ID you were approved with. Please contact support to change it."
                     },
                     "errors": {
                       "type": "array",
@@ -22257,7 +23114,7 @@
         ]
       },
       "patch": {
-        "description": "Creates the vehicle if the driver has none. Any change returns it to PENDING review, and the vehicle type cannot change while a delivery is in flight.",
+        "description": "Creates the vehicle if the driver has none. Any change returns it to PENDING review; sending the same details again leaves the review as it is. The vehicle type cannot change while a delivery is in flight.",
         "operationId": "drivers_upsertVehicle",
         "parameters": [],
         "requestBody": {
@@ -22645,7 +23502,7 @@
         ]
       },
       "post": {
-        "description": "Resubmitting a type supersedes the previous submission. Documents are stored privately.",
+        "description": "Resubmitting a type supersedes the previous submission. Documents are stored privately. `documentNumber` and `expiresAt` are optional here — the application form requires them for the national ID — and a document that has already expired is refused.",
         "operationId": "drivers_submitDocument",
         "parameters": [],
         "requestBody": {
@@ -22783,6 +23640,37 @@
               }
             }
           },
+          "422": {
+            "description": "This document has already expired. Please use one that is still valid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "code": {
+                      "type": "string",
+                      "example": "DRIVER_DOCUMENT_EXPIRED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "This document has already expired. Please use one that is still valid."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "nullable": true,
+                      "items": {
+                        "type": "object"
+                      },
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
           "500": {
             "description": "An unexpected error occurred. Please try again.",
             "content": {
@@ -22826,191 +23714,9 @@
         ]
       }
     },
-    "/api/v1/mobile/driver/documents/{id}": {
-      "get": {
-        "operationId": "drivers_getDocument",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "example": "cm8x1a2b3c4d5e6f7g8h9i0j",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "File fetched successfully.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "success": {
-                      "type": "boolean",
-                      "example": true
-                    },
-                    "code": {
-                      "type": "string",
-                      "example": "FILE_FETCHED"
-                    },
-                    "message": {
-                      "type": "string",
-                      "example": "File fetched successfully."
-                    },
-                    "data": {
-                      "$ref": "#/components/schemas/DriverDocumentDto"
-                    },
-                    "meta": {
-                      "type": "object",
-                      "nullable": true,
-                      "example": null
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Authentication is required.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "success": {
-                      "type": "boolean",
-                      "example": false
-                    },
-                    "code": {
-                      "type": "string",
-                      "example": "UNAUTHORIZED"
-                    },
-                    "message": {
-                      "type": "string",
-                      "example": "Authentication is required."
-                    },
-                    "errors": {
-                      "type": "array",
-                      "nullable": true,
-                      "items": {
-                        "type": "object"
-                      },
-                      "example": null
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Your account type cannot access this resource.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "success": {
-                      "type": "boolean",
-                      "example": false
-                    },
-                    "code": {
-                      "type": "string",
-                      "example": "ROLE_NOT_ALLOWED"
-                    },
-                    "message": {
-                      "type": "string",
-                      "example": "Your account type cannot access this resource."
-                    },
-                    "errors": {
-                      "type": "array",
-                      "nullable": true,
-                      "items": {
-                        "type": "object"
-                      },
-                      "example": null
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Driver document not found successfully.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "success": {
-                      "type": "boolean",
-                      "example": false
-                    },
-                    "code": {
-                      "type": "string",
-                      "example": "DRIVER_DOCUMENT_NOT_FOUND"
-                    },
-                    "message": {
-                      "type": "string",
-                      "example": "Driver document not found."
-                    },
-                    "errors": {
-                      "type": "array",
-                      "nullable": true,
-                      "items": {
-                        "type": "object"
-                      },
-                      "example": null
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "An unexpected error occurred. Please try again.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "success": {
-                      "type": "boolean",
-                      "example": false
-                    },
-                    "code": {
-                      "type": "string",
-                      "example": "INTERNAL_ERROR"
-                    },
-                    "message": {
-                      "type": "string",
-                      "example": "An unexpected error occurred. Please try again."
-                    },
-                    "errors": {
-                      "type": "array",
-                      "nullable": true,
-                      "items": {
-                        "type": "object"
-                      },
-                      "example": null
-                    }
-                  }
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Get one document with a fresh URL",
-        "tags": [
-          "Driver Profile"
-        ]
-      }
-    },
     "/api/v1/mobile/customer/drivers/nearby": {
       "get": {
-        "description": "For the pins on the booking map. Returns position, vehicle type and distance only — no identity, and coordinates are rounded to about 30 m.",
+        "description": "For the pins on the booking map. Returns position, vehicle type and distance only — no identity. Coordinates are rounded to about 110 m, and both the distance and the radius are measured to that rounded pin.",
         "operationId": "customerDrivers_find",
         "parameters": [
           {
@@ -23212,346 +23918,6 @@
         ]
       }
     },
-    "/api/v1/mobile/driver/wallet": {
-      "get": {
-        "description": "One wallet per currency. `availableBalance` is what can actually be withdrawn — the balance minus anything already committed to a pending withdrawal.",
-        "operationId": "wallet_find",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": "Wallet fetched successfully.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "success": {
-                      "type": "boolean",
-                      "example": true
-                    },
-                    "code": {
-                      "type": "string",
-                      "example": "WALLET_FETCHED"
-                    },
-                    "message": {
-                      "type": "string",
-                      "example": "Wallet fetched successfully."
-                    },
-                    "data": {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/components/schemas/WalletDto"
-                      }
-                    },
-                    "meta": {
-                      "type": "object",
-                      "nullable": true,
-                      "example": null
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Authentication is required.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "success": {
-                      "type": "boolean",
-                      "example": false
-                    },
-                    "code": {
-                      "type": "string",
-                      "example": "UNAUTHORIZED"
-                    },
-                    "message": {
-                      "type": "string",
-                      "example": "Authentication is required."
-                    },
-                    "errors": {
-                      "type": "array",
-                      "nullable": true,
-                      "items": {
-                        "type": "object"
-                      },
-                      "example": null
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Your account type cannot access this resource.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "success": {
-                      "type": "boolean",
-                      "example": false
-                    },
-                    "code": {
-                      "type": "string",
-                      "example": "ROLE_NOT_ALLOWED"
-                    },
-                    "message": {
-                      "type": "string",
-                      "example": "Your account type cannot access this resource."
-                    },
-                    "errors": {
-                      "type": "array",
-                      "nullable": true,
-                      "items": {
-                        "type": "object"
-                      },
-                      "example": null
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "An unexpected error occurred. Please try again.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "success": {
-                      "type": "boolean",
-                      "example": false
-                    },
-                    "code": {
-                      "type": "string",
-                      "example": "INTERNAL_ERROR"
-                    },
-                    "message": {
-                      "type": "string",
-                      "example": "An unexpected error occurred. Please try again."
-                    },
-                    "errors": {
-                      "type": "array",
-                      "nullable": true,
-                      "items": {
-                        "type": "object"
-                      },
-                      "example": null
-                    }
-                  }
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Wallet balances",
-        "tags": [
-          "Driver Wallet"
-        ]
-      }
-    },
-    "/api/v1/mobile/driver/wallet/transactions": {
-      "get": {
-        "description": "Every balance change, newest first, each carrying the balance before and after. Cursor paginated because this list only grows.",
-        "operationId": "wallet_findTransactions",
-        "parameters": [
-          {
-            "name": "cursor",
-            "required": false,
-            "in": "query",
-            "description": "Opaque cursor returned by the previous page.",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "limit",
-            "required": false,
-            "in": "query",
-            "schema": {
-              "minimum": 1,
-              "maximum": 100,
-              "default": 30,
-              "type": "number"
-            }
-          },
-          {
-            "name": "type",
-            "required": false,
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "enum": [
-                "DELIVERY_EARNING",
-                "COMMISSION",
-                "TOP_UP",
-                "WITHDRAWAL",
-                "WITHDRAWAL_REVERSAL",
-                "ADJUSTMENT",
-                "REFUND",
-                "BONUS"
-              ]
-            }
-          },
-          {
-            "name": "currency",
-            "required": false,
-            "in": "query",
-            "schema": {
-              "default": "KHR",
-              "type": "string",
-              "enum": [
-                "KHR",
-                "USD"
-              ]
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Wallet transactions fetched successfully.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "success": {
-                      "type": "boolean",
-                      "example": true
-                    },
-                    "code": {
-                      "type": "string",
-                      "example": "WALLET_TRANSACTIONS_FETCHED"
-                    },
-                    "message": {
-                      "type": "string",
-                      "example": "Wallet transactions fetched successfully."
-                    },
-                    "data": {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/components/schemas/WalletTransactionDto"
-                      }
-                    },
-                    "meta": {
-                      "$ref": "#/components/schemas/CursorMetaDto"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Authentication is required.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "success": {
-                      "type": "boolean",
-                      "example": false
-                    },
-                    "code": {
-                      "type": "string",
-                      "example": "UNAUTHORIZED"
-                    },
-                    "message": {
-                      "type": "string",
-                      "example": "Authentication is required."
-                    },
-                    "errors": {
-                      "type": "array",
-                      "nullable": true,
-                      "items": {
-                        "type": "object"
-                      },
-                      "example": null
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Your account type cannot access this resource.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "success": {
-                      "type": "boolean",
-                      "example": false
-                    },
-                    "code": {
-                      "type": "string",
-                      "example": "ROLE_NOT_ALLOWED"
-                    },
-                    "message": {
-                      "type": "string",
-                      "example": "Your account type cannot access this resource."
-                    },
-                    "errors": {
-                      "type": "array",
-                      "nullable": true,
-                      "items": {
-                        "type": "object"
-                      },
-                      "example": null
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "An unexpected error occurred. Please try again.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "success": {
-                      "type": "boolean",
-                      "example": false
-                    },
-                    "code": {
-                      "type": "string",
-                      "example": "INTERNAL_ERROR"
-                    },
-                    "message": {
-                      "type": "string",
-                      "example": "An unexpected error occurred. Please try again."
-                    },
-                    "errors": {
-                      "type": "array",
-                      "nullable": true,
-                      "items": {
-                        "type": "object"
-                      },
-                      "example": null
-                    }
-                  }
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "The wallet ledger",
-        "tags": [
-          "Driver Wallet"
-        ]
-      }
-    },
     "/api/v1/mobile/driver/withdrawal-settings": {
       "get": {
         "description": "The account number is stored encrypted; only its last four digits are ever returned.",
@@ -23694,8 +24060,19 @@
         ]
       },
       "put": {
+        "description": "This decides where payouts go, so it asks for the password first: send the X-Step-Up-Token from POST /auth/step-up.",
         "operationId": "withdrawals_updateSettings",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "X-Step-Up-Token",
+            "in": "header",
+            "description": "From POST /auth/step-up, made on this session in the last five minutes. A wrong or expired one is refused with 403 STEP_UP_REQUIRED.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -23801,7 +24178,7 @@
             }
           },
           "403": {
-            "description": "Your account type cannot access this resource.",
+            "description": "Please confirm your password to continue.",
             "content": {
               "application/json": {
                 "schema": {
@@ -23812,11 +24189,11 @@
                     },
                     "code": {
                       "type": "string",
-                      "example": "ROLE_NOT_ALLOWED"
+                      "example": "STEP_UP_REQUIRED"
                     },
                     "message": {
                       "type": "string",
-                      "example": "Your account type cannot access this resource."
+                      "example": "Please confirm your password to continue."
                     },
                     "errors": {
                       "type": "array",
@@ -23876,9 +24253,18 @@
     },
     "/api/v1/mobile/driver/withdrawals": {
       "post": {
-        "description": "The amount is reserved immediately, so it cannot be requested twice, but it does not leave the wallet until the transfer actually settles. Only one request may be open at a time.",
+        "description": "The amount is reserved immediately, so it cannot be requested twice, but it does not leave the wallet until the transfer actually settles. Only one request may be open at a time. Asks for the password first: send the X-Step-Up-Token from POST /auth/step-up.",
         "operationId": "withdrawals_request",
         "parameters": [
+          {
+            "name": "X-Step-Up-Token",
+            "in": "header",
+            "description": "From POST /auth/step-up, made on this session in the last five minutes. A wrong or expired one is refused with 403 STEP_UP_REQUIRED.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
           {
             "name": "Idempotency-Key",
             "in": "header",
@@ -23965,7 +24351,7 @@
             }
           },
           "403": {
-            "description": "Your account type cannot access this resource.",
+            "description": "Please confirm your password to continue.",
             "content": {
               "application/json": {
                 "schema": {
@@ -23976,11 +24362,11 @@
                     },
                     "code": {
                       "type": "string",
-                      "example": "ROLE_NOT_ALLOWED"
+                      "example": "STEP_UP_REQUIRED"
                     },
                     "message": {
                       "type": "string",
-                      "example": "Your account type cannot access this resource."
+                      "example": "Please confirm your password to continue."
                     },
                     "errors": {
                       "type": "array",
@@ -24675,6 +25061,346 @@
         ]
       }
     },
+    "/api/v1/mobile/driver/wallet": {
+      "get": {
+        "description": "One wallet per currency. `availableBalance` is what can actually be withdrawn — the balance minus anything already committed to a pending withdrawal.",
+        "operationId": "wallet_find",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Wallet fetched successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "code": {
+                      "type": "string",
+                      "example": "WALLET_FETCHED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Wallet fetched successfully."
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/WalletDto"
+                      }
+                    },
+                    "meta": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "code": {
+                      "type": "string",
+                      "example": "UNAUTHORIZED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Authentication is required."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "nullable": true,
+                      "items": {
+                        "type": "object"
+                      },
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Your account type cannot access this resource.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "code": {
+                      "type": "string",
+                      "example": "ROLE_NOT_ALLOWED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Your account type cannot access this resource."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "nullable": true,
+                      "items": {
+                        "type": "object"
+                      },
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected error occurred. Please try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "code": {
+                      "type": "string",
+                      "example": "INTERNAL_ERROR"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "An unexpected error occurred. Please try again."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "nullable": true,
+                      "items": {
+                        "type": "object"
+                      },
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Wallet balances",
+        "tags": [
+          "Driver Wallet"
+        ]
+      }
+    },
+    "/api/v1/mobile/driver/wallet/transactions": {
+      "get": {
+        "description": "Every balance change, newest first, each carrying the balance before and after. Cursor paginated because this list only grows.",
+        "operationId": "wallet_findTransactions",
+        "parameters": [
+          {
+            "name": "cursor",
+            "required": false,
+            "in": "query",
+            "description": "Opaque cursor returned by the previous page.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 30,
+              "type": "number"
+            }
+          },
+          {
+            "name": "type",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "DELIVERY_EARNING",
+                "COMMISSION",
+                "TOP_UP",
+                "WITHDRAWAL",
+                "WITHDRAWAL_REVERSAL",
+                "ADJUSTMENT",
+                "REFUND",
+                "BONUS"
+              ]
+            }
+          },
+          {
+            "name": "currency",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": "KHR",
+              "type": "string",
+              "enum": [
+                "KHR",
+                "USD"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Wallet transactions fetched successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "code": {
+                      "type": "string",
+                      "example": "WALLET_TRANSACTIONS_FETCHED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Wallet transactions fetched successfully."
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/WalletTransactionDto"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/CursorMetaDto"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "code": {
+                      "type": "string",
+                      "example": "UNAUTHORIZED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Authentication is required."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "nullable": true,
+                      "items": {
+                        "type": "object"
+                      },
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Your account type cannot access this resource.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "code": {
+                      "type": "string",
+                      "example": "ROLE_NOT_ALLOWED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Your account type cannot access this resource."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "nullable": true,
+                      "items": {
+                        "type": "object"
+                      },
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected error occurred. Please try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "code": {
+                      "type": "string",
+                      "example": "INTERNAL_ERROR"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "An unexpected error occurred. Please try again."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "nullable": true,
+                      "items": {
+                        "type": "object"
+                      },
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The wallet ledger",
+        "tags": [
+          "Driver Wallet"
+        ]
+      }
+    },
     "/api/v1/mobile/customer/profile": {
       "get": {
         "operationId": "customerProfile_getProfile",
@@ -25213,7 +25939,7 @@
     },
     "/api/v1/mobile/customer/account": {
       "delete": {
-        "description": "Soft deletion. Past deliveries and payments are retained as financial records; the phone number is released so it can be registered again.",
+        "description": "Soft deletion. Past deliveries and payments are retained as financial records; the phone number is released so it can be registered again, and every session on every device ends. This is the driver account too, so it is refused while the account holds a delivery on either side, is online in the driver app, or still has money in motion — an earning not yet settled, a withdrawal being paid out, or a wallet balance. A closed account can never sign in to collect it.",
         "operationId": "customerProfile_deleteAccount",
         "parameters": [],
         "responses": {
@@ -25280,7 +26006,7 @@
             }
           },
           "409": {
-            "description": "Account has active deliveries successfully.",
+            "description": "Account has active deliveries successfully.\n\nStill online in the driver app.\n\nAccount has pending settlement successfully.\n\nAccount has wallet balance successfully.",
             "content": {
               "application/json": {
                 "schema": {
@@ -25291,11 +26017,11 @@
                     },
                     "code": {
                       "type": "string",
-                      "example": "ACCOUNT_HAS_ACTIVE_DELIVERIES"
+                      "example": "ACCOUNT_HAS_WALLET_BALANCE"
                     },
                     "message": {
                       "type": "string",
-                      "example": "Account has active deliveries."
+                      "example": "Account has wallet balance."
                     },
                     "errors": {
                       "type": "array",
@@ -26412,6 +27138,148 @@
         "summary": "Make this the default address",
         "tags": [
           "Customer Address"
+        ]
+      }
+    },
+    "/api/v1/mobile/me": {
+      "get": {
+        "description": "One call for both apps to choose their first screen: call it at launch and after signing in. `driver` is null until the account applies to drive — the driver app shows its Apply screen — and otherwise carries the approval status and whatever still stands between the driver and going online. `customer.suspended` is true while an operator has stopped the account booking.",
+        "operationId": "me_find",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Profile fetched successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "code": {
+                      "type": "string",
+                      "example": "PROFILE_FETCHED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Profile fetched successfully."
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/MeDto"
+                    },
+                    "meta": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "code": {
+                      "type": "string",
+                      "example": "UNAUTHORIZED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Authentication is required."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "nullable": true,
+                      "items": {
+                        "type": "object"
+                      },
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Your account type cannot access this resource.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "code": {
+                      "type": "string",
+                      "example": "ROLE_NOT_ALLOWED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Your account type cannot access this resource."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "nullable": true,
+                      "items": {
+                        "type": "object"
+                      },
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected error occurred. Please try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "code": {
+                      "type": "string",
+                      "example": "INTERNAL_ERROR"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "An unexpected error occurred. Please try again."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "nullable": true,
+                      "items": {
+                        "type": "object"
+                      },
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Who is signed in, and what each side of the account may do",
+        "tags": [
+          "Account"
         ]
       }
     },
@@ -28205,7 +29073,7 @@
             }
           },
           "403": {
-            "description": "Your account type cannot access this resource.",
+            "description": "You cannot take a delivery you booked yourself.",
             "content": {
               "application/json": {
                 "schema": {
@@ -28216,11 +29084,11 @@
                     },
                     "code": {
                       "type": "string",
-                      "example": "ROLE_NOT_ALLOWED"
+                      "example": "JOB_OWN_DELIVERY"
                     },
                     "message": {
                       "type": "string",
-                      "example": "Your account type cannot access this resource."
+                      "example": "You cannot take a delivery you booked yourself."
                     },
                     "errors": {
                       "type": "array",
@@ -33341,7 +34209,7 @@
     },
     "/api/v1/mobile/notifications": {
       "get": {
-        "description": "Newest first. Works for customers and drivers alike.",
+        "description": "Newest first. Each app sees its own — the driver app its job and payout notices, the customer app its delivery updates — plus those meant for both, such as account notices. A build that has not said which app it is sees everything.",
         "operationId": "notifications_findAll",
         "parameters": [
           {
@@ -33515,7 +34383,7 @@
     },
     "/api/v1/mobile/notifications/unread-count": {
       "get": {
-        "description": "For the badge, without fetching the list.",
+        "description": "For the badge, without fetching the list. Counts this app’s inbox only.",
         "operationId": "notifications_unreadCount",
         "parameters": [],
         "responses": {
@@ -33840,6 +34708,7 @@
     },
     "/api/v1/mobile/notifications/read-all": {
       "post": {
+        "description": "Everything in this app’s inbox. The other app’s unread notifications stay unread.",
         "operationId": "notifications_markAllRead",
         "parameters": [],
         "responses": {
@@ -34330,6 +35199,10 @@
       "description": "Registration, OTP, sign-in, token rotation and password recovery."
     },
     {
+      "name": "Account",
+      "description": "Who is signed in, and what each side of the account may do."
+    },
+    {
       "name": "Customer Profile",
       "description": "The signed-in customer account and avatar."
     },
@@ -34536,6 +35409,9 @@
               "CUSTOMER_AVATAR",
               "DRIVER_AVATAR",
               "DRIVER_DOCUMENT",
+              "NATIONAL_ID",
+              "DRIVING_LICENSE",
+              "CERTIFICATE_OF_REGISTRY",
               "VEHICLE_PHOTO",
               "PACKAGE_PHOTO",
               "PROOF_OF_DELIVERY",
@@ -34700,9 +35576,7 @@
             "type": "string",
             "enum": [
               "REGISTRATION",
-              "LOGIN",
-              "PASSWORD_RESET",
-              "PHONE_CHANGE"
+              "PASSWORD_RESET"
             ]
           },
           "role": {
@@ -34712,14 +35586,13 @@
               "DRIVER",
               "ADMIN"
             ],
-            "description": "Which account the code is for — one phone may hold both."
+            "description": "Only needed for a back-office account. One mobile account serves both apps, so the mobile apps may omit it."
           }
         },
         "required": [
           "identifier",
           "channel",
-          "purpose",
-          "role"
+          "purpose"
         ]
       },
       "ResendOtpDto": {
@@ -34742,9 +35615,7 @@
             "type": "string",
             "enum": [
               "REGISTRATION",
-              "LOGIN",
-              "PASSWORD_RESET",
-              "PHONE_CHANGE"
+              "PASSWORD_RESET"
             ]
           },
           "role": {
@@ -34754,14 +35625,13 @@
               "DRIVER",
               "ADMIN"
             ],
-            "description": "Which account the code is for — one phone may hold both."
+            "description": "Only needed for a back-office account. One mobile account serves both apps, so the mobile apps may omit it."
           }
         },
         "required": [
           "identifier",
           "channel",
-          "purpose",
-          "role"
+          "purpose"
         ]
       },
       "OtpVerifiedDto": {
@@ -34801,9 +35671,7 @@
             "type": "string",
             "enum": [
               "REGISTRATION",
-              "LOGIN",
-              "PASSWORD_RESET",
-              "PHONE_CHANGE"
+              "PASSWORD_RESET"
             ]
           },
           "role": {
@@ -34813,7 +35681,7 @@
               "DRIVER",
               "ADMIN"
             ],
-            "description": "Which account the code is for — one phone may hold both."
+            "description": "Only needed for a back-office account. One mobile account serves both apps, so the mobile apps may omit it."
           },
           "code": {
             "type": "string",
@@ -34824,7 +35692,6 @@
           "identifier",
           "channel",
           "purpose",
-          "role",
           "code"
         ]
       },
@@ -34863,7 +35730,8 @@
           },
           "fullName": {
             "type": "string",
-            "example": "Sok Dara"
+            "example": "Sok Dara",
+            "description": "The name for the app that signed in: in the driver app the one the driver was approved under, in the customer app the one the person chose."
           },
           "avatarUrl": {
             "type": "object",
@@ -34872,12 +35740,28 @@
           "customerId": {
             "type": "object",
             "nullable": true,
-            "description": "Set for CUSTOMER accounts."
+            "description": "Every mobile account has one: it can always order."
           },
           "driverId": {
             "type": "object",
             "nullable": true,
-            "description": "Set for DRIVER accounts."
+            "description": "Set once the account has applied to drive, whatever the review decided. Null until then."
+          },
+          "customerSuspended": {
+            "type": "boolean",
+            "example": false,
+            "description": "True while an operator has stopped this account booking. The driver side is unaffected."
+          },
+          "driverApprovalStatus": {
+            "type": "string",
+            "enum": [
+              "PENDING_APPROVAL",
+              "ACTIVE",
+              "SUSPENDED",
+              "REJECTED"
+            ],
+            "nullable": true,
+            "description": "Where the driver side stands, so the driver app can pick its first screen without another call. Null until the account applies to drive."
           }
         },
         "required": [
@@ -34885,7 +35769,8 @@
           "phone",
           "role",
           "status",
-          "fullName"
+          "fullName",
+          "customerSuspended"
         ]
       },
       "AuthTokensDto": {
@@ -34936,7 +35821,8 @@
         "properties": {
           "installationId": {
             "type": "string",
-            "example": "A1B2C3D4-E5F6-7890-ABCD-EF1234567890"
+            "example": "A1B2C3D4-E5F6-7890-ABCD-EF1234567890",
+            "description": "A random id the app generates on first launch and keeps in its own storage. Not the vendor or Android id: two apps from the same developer share those, and the customer and driver apps must be told apart."
           },
           "platform": {
             "type": "string",
@@ -34945,6 +35831,14 @@
               "ANDROID",
               "WEB"
             ]
+          },
+          "app": {
+            "type": "string",
+            "enum": [
+              "CUSTOMER",
+              "DRIVER"
+            ],
+            "description": "Which app is signing in. Push notifications, the notification list and live events are split by it; a build that leaves it out is treated as both apps."
           },
           "model": {
             "type": "string",
@@ -35016,7 +35910,8 @@
               "DRIVER",
               "ADMIN"
             ],
-            "description": "The app signing in. Customer app sends CUSTOMER, driver app DRIVER."
+            "default": "CUSTOMER",
+            "description": "Only needed to sign in to a back-office account. One mobile account serves both the customer and driver apps, so the mobile apps may omit this."
           },
           "device": {
             "$ref": "#/components/schemas/DeviceInfoDto"
@@ -35024,8 +35919,7 @@
         },
         "required": [
           "phone",
-          "password",
-          "role"
+          "password"
         ]
       },
       "RefreshTokenDto": {
@@ -35033,6 +35927,14 @@
         "properties": {
           "refreshToken": {
             "type": "string"
+          },
+          "device": {
+            "description": "The device asking. Send the same installation id used at sign-in: a refresh presented from a different device is refused, which is what makes a stolen token useless off the phone it was taken from.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/DeviceInfoDto"
+              }
+            ]
           }
         },
         "required": [
@@ -35053,6 +35955,35 @@
           }
         }
       },
+      "StepUpTokenDto": {
+        "type": "object",
+        "properties": {
+          "stepUpToken": {
+            "type": "string",
+            "description": "Send as the X-Step-Up-Token header."
+          },
+          "expiresAt": {
+            "type": "string",
+            "example": "2026-09-15T10:05:00.000Z"
+          }
+        },
+        "required": [
+          "stepUpToken",
+          "expiresAt"
+        ]
+      },
+      "StepUpDto": {
+        "type": "object",
+        "properties": {
+          "password": {
+            "type": "string",
+            "example": "Passw0rd!"
+          }
+        },
+        "required": [
+          "password"
+        ]
+      },
       "ForgotPasswordDto": {
         "type": "object",
         "properties": {
@@ -35066,12 +35997,12 @@
               "CUSTOMER",
               "DRIVER",
               "ADMIN"
-            ]
+            ],
+            "description": "Only needed for a back-office account. One mobile account serves both apps, so the mobile apps may omit it."
           }
         },
         "required": [
-          "phone",
-          "role"
+          "phone"
         ]
       },
       "VerifyForgotPasswordDto": {
@@ -35087,7 +36018,8 @@
               "CUSTOMER",
               "DRIVER",
               "ADMIN"
-            ]
+            ],
+            "description": "Only needed for a back-office account. One mobile account serves both apps, so the mobile apps may omit it."
           },
           "code": {
             "type": "string",
@@ -35096,7 +36028,6 @@
         },
         "required": [
           "phone",
-          "role",
           "code"
         ]
       },
@@ -35113,7 +36044,8 @@
               "CUSTOMER",
               "DRIVER",
               "ADMIN"
-            ]
+            ],
+            "description": "Only needed for a back-office account. One mobile account serves both apps, so the mobile apps may omit it."
           },
           "verificationToken": {
             "type": "string",
@@ -35127,7 +36059,6 @@
         },
         "required": [
           "phone",
-          "role",
           "verificationToken",
           "newPassword"
         ]
@@ -36598,6 +37529,7 @@
               "DRIVER_LICENSE_FRONT",
               "DRIVER_LICENSE_BACK",
               "VEHICLE_REGISTRATION",
+              "CERTIFICATE_OF_REGISTRY",
               "VEHICLE_PHOTO",
               "INSURANCE",
               "OTHER"
@@ -36626,6 +37558,12 @@
             "nullable": true,
             "description": "A time-limited link to the uploaded file."
           },
+          "documentNumber": {
+            "type": "object",
+            "nullable": true,
+            "example": "010203040",
+            "description": "The number the driver typed for this document, in full, to check against the photo. Null for documents submitted before numbers were asked for."
+          },
           "reviewNote": {
             "type": "object",
             "nullable": true
@@ -36640,7 +37578,9 @@
           },
           "expiresAt": {
             "type": "object",
-            "nullable": true
+            "nullable": true,
+            "example": "2031-05-20",
+            "description": "The expiry date the driver entered for this document, as YYYY-MM-DD."
           },
           "uploadedAt": {
             "type": "string"
@@ -36933,6 +37873,27 @@
           "status"
         ]
       },
+      "AdminReviewVehicleDto": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "APPROVED",
+              "REJECTED"
+            ],
+            "description": "A review decides one way or the other; it cannot put a vehicle back to pending."
+          },
+          "note": {
+            "type": "string",
+            "example": "Plate number does not match the registration photo",
+            "description": "Required when rejecting — the driver is shown this."
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
       "AdminAssignZonesDto": {
         "type": "object",
         "properties": {
@@ -36979,7 +37940,13 @@
               "ACTIVE",
               "SUSPENDED",
               "DEACTIVATED"
-            ]
+            ],
+            "description": "SUSPENDED while an operator has stopped this customer booking; otherwise the account status."
+          },
+          "driverId": {
+            "type": "object",
+            "nullable": true,
+            "description": "Set when this person also drives. That side is suspended separately, under /admin/drivers."
           },
           "deliveryCount": {
             "type": "number",
@@ -37095,7 +38062,13 @@
               "ACTIVE",
               "SUSPENDED",
               "DEACTIVATED"
-            ]
+            ],
+            "description": "SUSPENDED while an operator has stopped this customer booking; otherwise the account status."
+          },
+          "driverId": {
+            "type": "object",
+            "nullable": true,
+            "description": "Set when this person also drives. That side is suspended separately, under /admin/drivers."
           },
           "deliveryCount": {
             "type": "number",
@@ -37116,7 +38089,8 @@
           },
           "suspendedReason": {
             "type": "object",
-            "nullable": true
+            "nullable": true,
+            "description": "Why booking was suspended."
           },
           "lastLoginAt": {
             "type": "object",
@@ -39584,6 +40558,7 @@
               "WALLET_CREDITED",
               "DOCUMENT_REVIEWED",
               "ACCOUNT_STATUS_CHANGED",
+              "NEW_SIGN_IN",
               "CHAT_MESSAGE",
               "PROMOTION",
               "SYSTEM_ANNOUNCEMENT"
@@ -39714,6 +40689,7 @@
               "WALLET_CREDITED",
               "DOCUMENT_REVIEWED",
               "ACCOUNT_STATUS_CHANGED",
+              "NEW_SIGN_IN",
               "CHAT_MESSAGE",
               "PROMOTION",
               "SYSTEM_ANNOUNCEMENT"
@@ -39771,6 +40747,7 @@
               "WALLET_CREDITED",
               "DOCUMENT_REVIEWED",
               "ACCOUNT_STATUS_CHANGED",
+              "NEW_SIGN_IN",
               "CHAT_MESSAGE",
               "PROMOTION",
               "SYSTEM_ANNOUNCEMENT"
@@ -41106,6 +42083,301 @@
           "name"
         ]
       },
+      "DriverApplicationStepDto": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "enum": [
+              "NATIONAL_ID",
+              "PROFILE_PICTURE",
+              "VEHICLE",
+              "BANKING",
+              "DRIVING_LICENSE",
+              "CERTIFICATE_OF_REGISTRY"
+            ],
+            "example": "NATIONAL_ID"
+          },
+          "title": {
+            "type": "string",
+            "example": "National ID",
+            "description": "Ready to render; already in the caller’s language."
+          },
+          "required": {
+            "type": "boolean",
+            "example": true,
+            "description": "False for the steps a driver may skip and still work."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "NOT_SUBMITTED",
+              "PENDING",
+              "APPROVED",
+              "REJECTED"
+            ],
+            "example": "NOT_SUBMITTED"
+          },
+          "note": {
+            "type": "object",
+            "nullable": true,
+            "example": "Photograph is too blurred to read the expiry date",
+            "description": "Why it was refused. Present only when the status is REJECTED."
+          },
+          "endpoint": {
+            "type": "string",
+            "example": "POST /mobile/driver/documents",
+            "description": "Where the app submits this step. Every row is part of the one application, so this is POST /mobile/driver/application throughout — to fix a rejected row, send the form again."
+          }
+        },
+        "required": [
+          "key",
+          "title",
+          "required",
+          "status",
+          "endpoint"
+        ]
+      },
+      "DriverApplicationDto": {
+        "type": "object",
+        "properties": {
+          "approvalStatus": {
+            "type": "string",
+            "enum": [
+              "PENDING_APPROVAL",
+              "ACTIVE",
+              "SUSPENDED",
+              "REJECTED"
+            ],
+            "nullable": true,
+            "description": "Null until the account applies: the screen is then a blank form, every step NOT_SUBMITTED."
+          },
+          "canSubmit": {
+            "type": "boolean",
+            "example": false,
+            "description": "Every required step submitted. This is what the Submit button waits for — an operator reviews what follows."
+          },
+          "canGoOnline": {
+            "type": "boolean",
+            "example": false,
+            "description": "Reviewed, approved, and free to go online."
+          },
+          "blockers": {
+            "example": [
+              "DRIVER_NOT_APPROVED"
+            ],
+            "description": "The same machine-readable reasons the availability endpoint refuses with.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "submittedAt": {
+            "type": "object",
+            "nullable": true,
+            "example": "2026-09-12T04:00:00.000Z",
+            "description": "When the completed application was handed in. Null while the driver is still filling it out."
+          },
+          "steps": {
+            "description": "In the order the screen should show them.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DriverApplicationStepDto"
+            }
+          }
+        },
+        "required": [
+          "canSubmit",
+          "canGoOnline",
+          "blockers",
+          "steps"
+        ]
+      },
+      "NationalIdDto": {
+        "type": "object",
+        "properties": {
+          "fileId": {
+            "type": "string",
+            "description": "File id from POST /mobile/uploads with purpose NATIONAL_ID."
+          },
+          "number": {
+            "type": "string",
+            "example": "010203040",
+            "description": "The number on the card, as the driver types it. Spaces and dashes are ignored. Stored encrypted: the operator reviewing the application sees it in full, the app only ever the last four."
+          },
+          "expiresAt": {
+            "type": "string",
+            "example": "2031-05-20",
+            "description": "The expiry date on the card, as YYYY-MM-DD. An ID that has already expired is refused with 422 DRIVER_DOCUMENT_EXPIRED before anything is saved."
+          }
+        },
+        "required": [
+          "fileId",
+          "number",
+          "expiresAt"
+        ]
+      },
+      "ApplicationVehicleDto": {
+        "type": "object",
+        "properties": {
+          "vehicleTypeId": {
+            "type": "string",
+            "description": "Vehicle type id from GET /mobile/vehicle-types."
+          },
+          "plateNumber": {
+            "type": "string",
+            "example": "1AB-2345"
+          },
+          "photoFileId": {
+            "type": "string",
+            "description": "File id from POST /mobile/uploads with purpose VEHICLE_PHOTO."
+          },
+          "brand": {
+            "type": "string",
+            "example": "Honda"
+          },
+          "model": {
+            "type": "string",
+            "example": "Dream 125"
+          },
+          "color": {
+            "type": "string",
+            "example": "Black"
+          },
+          "year": {
+            "type": "number",
+            "example": 2022
+          }
+        },
+        "required": [
+          "vehicleTypeId",
+          "plateNumber",
+          "photoFileId",
+          "brand",
+          "model",
+          "color",
+          "year"
+        ]
+      },
+      "UpdateWithdrawalSettingsDto": {
+        "type": "object",
+        "properties": {
+          "bankName": {
+            "type": "string",
+            "example": "ABA Bank"
+          },
+          "accountHolderName": {
+            "type": "string",
+            "example": "CHAN SOPHEAK"
+          },
+          "accountNumber": {
+            "type": "string",
+            "example": "000123456789",
+            "description": "Stored encrypted; only the last four digits are ever returned."
+          },
+          "khqrFileId": {
+            "type": "string",
+            "description": "File id from POST /mobile/uploads with purpose KHQR_IMAGE."
+          }
+        },
+        "required": [
+          "bankName",
+          "accountHolderName",
+          "accountNumber"
+        ]
+      },
+      "DrivingLicenseDto": {
+        "type": "object",
+        "properties": {
+          "fileId": {
+            "type": "string",
+            "description": "File id from POST /mobile/uploads with purpose DRIVING_LICENSE."
+          },
+          "number": {
+            "type": "string",
+            "example": "B123456",
+            "description": "The licence number, as printed. Spaces and dashes are ignored. Stored encrypted like the national ID number."
+          },
+          "expiresAt": {
+            "type": "string",
+            "example": "2030-01-31",
+            "description": "The expiry date on the licence, as YYYY-MM-DD. An expired licence is refused with 422 DRIVER_DOCUMENT_EXPIRED before anything is saved."
+          }
+        },
+        "required": [
+          "fileId",
+          "number",
+          "expiresAt"
+        ]
+      },
+      "CertificateOfRegistryDto": {
+        "type": "object",
+        "properties": {
+          "fileId": {
+            "type": "string",
+            "description": "File id from POST /mobile/uploads with purpose CERTIFICATE_OF_REGISTRY."
+          },
+          "number": {
+            "type": "string",
+            "example": "PP123456",
+            "description": "The certificate number, as printed. Spaces and dashes are ignored. Stored encrypted like the national ID number."
+          },
+          "expiresAt": {
+            "type": "string",
+            "example": "2030-01-31",
+            "description": "The expiry date on the certificate, as YYYY-MM-DD, if it has one. An expired certificate is refused with 422 DRIVER_DOCUMENT_EXPIRED before anything is saved."
+          }
+        },
+        "required": [
+          "fileId",
+          "number"
+        ]
+      },
+      "SubmitDriverApplicationDto": {
+        "type": "object",
+        "properties": {
+          "nationalId": {
+            "$ref": "#/components/schemas/NationalIdDto"
+          },
+          "avatarFileId": {
+            "type": "string",
+            "description": "File id from POST /mobile/uploads with purpose DRIVER_AVATAR."
+          },
+          "vehicle": {
+            "description": "Every field is required here, brand, model, colour and year included.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ApplicationVehicleDto"
+              }
+            ]
+          },
+          "banking": {
+            "$ref": "#/components/schemas/UpdateWithdrawalSettingsDto"
+          },
+          "drivingLicense": {
+            "description": "Optional. When sent, it needs its number and expiry date, like the national ID.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/DrivingLicenseDto"
+              }
+            ]
+          },
+          "certificateOfRegistry": {
+            "description": "Optional. When sent, it needs its number; the expiry date is optional.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CertificateOfRegistryDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "nationalId",
+          "avatarFileId",
+          "vehicle",
+          "banking"
+        ]
+      },
       "DriverStatsDto": {
         "type": "object",
         "properties": {
@@ -41150,6 +42422,7 @@
               "DRIVER_LICENSE_FRONT",
               "DRIVER_LICENSE_BACK",
               "VEHICLE_REGISTRATION",
+              "CERTIFICATE_OF_REGISTRY",
               "VEHICLE_PHOTO",
               "INSURANCE",
               "OTHER"
@@ -41301,7 +42574,8 @@
         "properties": {
           "fullName": {
             "type": "string",
-            "example": "Chan Sopheak"
+            "example": "Chan Sopheak",
+            "description": "The name on the driver’s ID. Editable until they are approved; after that only support can change it, and sending a different one is refused with 409 DRIVER_NAME_LOCKED."
           },
           "email": {
             "type": "object",
@@ -41429,7 +42703,8 @@
         },
         "required": [
           "vehicleTypeId",
-          "plateNumber"
+          "plateNumber",
+          "photoFileId"
         ]
       },
       "DriverDocumentDto": {
@@ -41446,6 +42721,7 @@
               "DRIVER_LICENSE_FRONT",
               "DRIVER_LICENSE_BACK",
               "VEHICLE_REGISTRATION",
+              "CERTIFICATE_OF_REGISTRY",
               "VEHICLE_PHOTO",
               "INSURANCE",
               "OTHER"
@@ -41472,6 +42748,12 @@
             "type": "object",
             "nullable": true
           },
+          "documentNumberLast4": {
+            "type": "object",
+            "nullable": true,
+            "example": "3040",
+            "description": "The last four characters of the number on the document. The full number is never sent to the app."
+          },
           "reviewNote": {
             "type": "object",
             "nullable": true,
@@ -41483,7 +42765,9 @@
           },
           "expiresAt": {
             "type": "object",
-            "nullable": true
+            "nullable": true,
+            "example": "2031-05-20",
+            "description": "The expiry date printed on the document, as YYYY-MM-DD."
           },
           "createdAt": {
             "type": "string"
@@ -41516,6 +42800,7 @@
               "DRIVER_LICENSE_FRONT",
               "DRIVER_LICENSE_BACK",
               "VEHICLE_REGISTRATION",
+              "CERTIFICATE_OF_REGISTRY",
               "VEHICLE_PHOTO",
               "INSURANCE",
               "OTHER"
@@ -41523,7 +42808,17 @@
           },
           "fileId": {
             "type": "string",
-            "description": "File id from POST /mobile/uploads with purpose DRIVER_DOCUMENT."
+            "description": "File id from POST /mobile/uploads with the purpose for this type: NATIONAL_ID for a national ID, DRIVING_LICENSE for a driving licence, CERTIFICATE_OF_REGISTRY for a certificate of registry, DRIVER_DOCUMENT for anything else. DRIVER_DOCUMENT is still accepted for all of them here, for builds from before the split."
+          },
+          "documentNumber": {
+            "type": "string",
+            "example": "010203040",
+            "description": "The number printed on the document. Spaces and dashes are ignored. Stored encrypted; the app is only ever shown the last four."
+          },
+          "expiresAt": {
+            "type": "string",
+            "example": "2031-05-20",
+            "description": "The expiry date printed on the document, as YYYY-MM-DD. One that has already passed is refused with 422 DRIVER_DOCUMENT_EXPIRED."
           }
         },
         "required": [
@@ -41536,12 +42831,12 @@
         "properties": {
           "latitude": {
             "type": "number",
-            "example": 11.5581,
-            "description": "Rounded to about 30 m — precise enough for a pin, not for tailing someone."
+            "example": 11.558,
+            "description": "Rounded to about 110 m — precise enough for a pin, not for tailing someone."
           },
           "longitude": {
             "type": "number",
-            "example": 104.9264
+            "example": 104.926
           },
           "vehicleTypeCode": {
             "type": "string",
@@ -41550,7 +42845,7 @@
           "distanceMeters": {
             "type": "number",
             "example": 640,
-            "description": "Straight-line metres from the point you asked about."
+            "description": "Straight-line metres from the point you asked about to the rounded pin — not to the driver."
           },
           "heading": {
             "type": "object",
@@ -41568,6 +42863,165 @@
       "Object": {
         "type": "object",
         "properties": {}
+      },
+      "WithdrawalSettingsDto": {
+        "type": "object",
+        "properties": {
+          "bankName": {
+            "type": "object",
+            "nullable": true,
+            "example": "ABA Bank"
+          },
+          "accountHolderName": {
+            "type": "object",
+            "nullable": true,
+            "example": "CHAN SOPHEAK"
+          },
+          "accountNumberLast4": {
+            "type": "object",
+            "nullable": true,
+            "example": "6789",
+            "description": "Last four digits only."
+          },
+          "khqrImageUrl": {
+            "type": "object",
+            "nullable": true,
+            "description": "Presigned URL; expires."
+          },
+          "isComplete": {
+            "type": "boolean",
+            "example": true,
+            "description": "Whether a withdrawal can be requested."
+          },
+          "updatedAt": {
+            "type": "object",
+            "nullable": true
+          }
+        },
+        "required": [
+          "isComplete"
+        ]
+      },
+      "WithdrawalDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "PENDING",
+              "APPROVED",
+              "PROCESSING",
+              "SUCCESS",
+              "FAILED",
+              "REJECTED",
+              "CANCELLED"
+            ]
+          },
+          "method": {
+            "type": "string",
+            "enum": [
+              "BANK_TRANSFER",
+              "KHQR"
+            ]
+          },
+          "amount": {
+            "type": "number",
+            "example": 100000
+          },
+          "fee": {
+            "type": "number",
+            "example": 0
+          },
+          "netAmount": {
+            "type": "number",
+            "example": 100000,
+            "description": "What will actually be transferred."
+          },
+          "currency": {
+            "type": "string",
+            "enum": [
+              "KHR",
+              "USD"
+            ]
+          },
+          "bankName": {
+            "type": "object",
+            "nullable": true
+          },
+          "accountHolderName": {
+            "type": "object",
+            "nullable": true
+          },
+          "accountNumberLast4": {
+            "type": "object",
+            "nullable": true,
+            "example": "6789"
+          },
+          "failureReason": {
+            "type": "object",
+            "nullable": true,
+            "description": "Why it was rejected or failed."
+          },
+          "canCancel": {
+            "type": "boolean",
+            "example": true,
+            "description": "Whether the driver can still cancel it."
+          },
+          "requestedAt": {
+            "type": "string"
+          },
+          "processedAt": {
+            "type": "object",
+            "nullable": true
+          },
+          "completedAt": {
+            "type": "object",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "method",
+          "amount",
+          "fee",
+          "netAmount",
+          "currency",
+          "canCancel",
+          "requestedAt"
+        ]
+      },
+      "CreateWithdrawalDto": {
+        "type": "object",
+        "properties": {
+          "amount": {
+            "type": "number",
+            "example": 100000,
+            "description": "Amount to withdraw, in minor units."
+          },
+          "currency": {
+            "type": "string",
+            "enum": [
+              "KHR",
+              "USD"
+            ],
+            "default": "KHR"
+          },
+          "method": {
+            "type": "string",
+            "enum": [
+              "BANK_TRANSFER",
+              "KHQR"
+            ],
+            "default": "BANK_TRANSFER"
+          }
+        },
+        "required": [
+          "amount"
+        ]
       },
       "WalletDto": {
         "type": "object",
@@ -41721,192 +43175,6 @@
         "required": [
           "hasMore",
           "limit"
-        ]
-      },
-      "WithdrawalSettingsDto": {
-        "type": "object",
-        "properties": {
-          "bankName": {
-            "type": "object",
-            "nullable": true,
-            "example": "ABA Bank"
-          },
-          "accountHolderName": {
-            "type": "object",
-            "nullable": true,
-            "example": "CHAN SOPHEAK"
-          },
-          "accountNumberLast4": {
-            "type": "object",
-            "nullable": true,
-            "example": "6789",
-            "description": "Last four digits only."
-          },
-          "khqrImageUrl": {
-            "type": "object",
-            "nullable": true,
-            "description": "Presigned URL; expires."
-          },
-          "isComplete": {
-            "type": "boolean",
-            "example": true,
-            "description": "Whether a withdrawal can be requested."
-          },
-          "updatedAt": {
-            "type": "object",
-            "nullable": true
-          }
-        },
-        "required": [
-          "isComplete"
-        ]
-      },
-      "UpdateWithdrawalSettingsDto": {
-        "type": "object",
-        "properties": {
-          "bankName": {
-            "type": "string",
-            "example": "ABA Bank"
-          },
-          "accountHolderName": {
-            "type": "string",
-            "example": "CHAN SOPHEAK"
-          },
-          "accountNumber": {
-            "type": "string",
-            "example": "000123456789",
-            "description": "Stored encrypted; only the last four digits are ever returned."
-          },
-          "khqrFileId": {
-            "type": "string",
-            "description": "File id from POST /mobile/uploads with purpose KHQR_IMAGE."
-          }
-        },
-        "required": [
-          "bankName",
-          "accountHolderName",
-          "accountNumber"
-        ]
-      },
-      "WithdrawalDto": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "status": {
-            "type": "string",
-            "enum": [
-              "PENDING",
-              "APPROVED",
-              "PROCESSING",
-              "SUCCESS",
-              "FAILED",
-              "REJECTED",
-              "CANCELLED"
-            ]
-          },
-          "method": {
-            "type": "string",
-            "enum": [
-              "BANK_TRANSFER",
-              "KHQR"
-            ]
-          },
-          "amount": {
-            "type": "number",
-            "example": 100000
-          },
-          "fee": {
-            "type": "number",
-            "example": 0
-          },
-          "netAmount": {
-            "type": "number",
-            "example": 100000,
-            "description": "What will actually be transferred."
-          },
-          "currency": {
-            "type": "string",
-            "enum": [
-              "KHR",
-              "USD"
-            ]
-          },
-          "bankName": {
-            "type": "object",
-            "nullable": true
-          },
-          "accountHolderName": {
-            "type": "object",
-            "nullable": true
-          },
-          "accountNumberLast4": {
-            "type": "object",
-            "nullable": true,
-            "example": "6789"
-          },
-          "failureReason": {
-            "type": "object",
-            "nullable": true,
-            "description": "Why it was rejected or failed."
-          },
-          "canCancel": {
-            "type": "boolean",
-            "example": true,
-            "description": "Whether the driver can still cancel it."
-          },
-          "requestedAt": {
-            "type": "string"
-          },
-          "processedAt": {
-            "type": "object",
-            "nullable": true
-          },
-          "completedAt": {
-            "type": "object",
-            "nullable": true
-          }
-        },
-        "required": [
-          "id",
-          "status",
-          "method",
-          "amount",
-          "fee",
-          "netAmount",
-          "currency",
-          "canCancel",
-          "requestedAt"
-        ]
-      },
-      "CreateWithdrawalDto": {
-        "type": "object",
-        "properties": {
-          "amount": {
-            "type": "number",
-            "example": 100000,
-            "description": "Amount to withdraw, in minor units."
-          },
-          "currency": {
-            "type": "string",
-            "enum": [
-              "KHR",
-              "USD"
-            ],
-            "default": "KHR"
-          },
-          "method": {
-            "type": "string",
-            "enum": [
-              "BANK_TRANSFER",
-              "KHQR"
-            ],
-            "default": "BANK_TRANSFER"
-          }
-        },
-        "required": [
-          "amount"
         ]
       },
       "CustomerStatsDto": {
@@ -42191,6 +43459,155 @@
             "type": "string"
           }
         }
+      },
+      "MeAccountDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "phone": {
+            "type": "string",
+            "example": "+85512345678"
+          },
+          "email": {
+            "type": "object",
+            "nullable": true,
+            "example": "dara@example.com"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "PENDING_VERIFICATION",
+              "ACTIVE",
+              "SUSPENDED",
+              "DEACTIVATED"
+            ]
+          },
+          "app": {
+            "type": "string",
+            "enum": [
+              "CUSTOMER",
+              "DRIVER"
+            ],
+            "nullable": true,
+            "description": "The app this session signed in through; null for a build that did not say."
+          }
+        },
+        "required": [
+          "id",
+          "phone",
+          "status"
+        ]
+      },
+      "MeCustomerDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "fullName": {
+            "type": "string",
+            "example": "Sok Dara",
+            "description": "The name the person chose for the customer app."
+          },
+          "avatarUrl": {
+            "type": "object",
+            "nullable": true
+          },
+          "suspended": {
+            "type": "boolean",
+            "example": false,
+            "description": "True while an operator has stopped this account booking. The driver side is unaffected."
+          }
+        },
+        "required": [
+          "id",
+          "fullName",
+          "suspended"
+        ]
+      },
+      "MeDriverDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "fullName": {
+            "type": "string",
+            "example": "Chan Sopheak",
+            "description": "The name on the driver’s ID, locked once approved."
+          },
+          "avatarUrl": {
+            "type": "object",
+            "nullable": true
+          },
+          "approvalStatus": {
+            "type": "string",
+            "enum": [
+              "PENDING_APPROVAL",
+              "ACTIVE",
+              "SUSPENDED",
+              "REJECTED"
+            ]
+          },
+          "submittedAt": {
+            "type": "object",
+            "nullable": true,
+            "description": "When the application was handed in; null while it is still being filled out."
+          },
+          "canGoOnline": {
+            "type": "boolean",
+            "example": false
+          },
+          "blockers": {
+            "example": [
+              "DRIVER_NOT_APPROVED"
+            ],
+            "description": "What still stands between the driver and going online, as response codes — the same list the driver profile shows as a checklist.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "fullName",
+          "approvalStatus",
+          "canGoOnline",
+          "blockers"
+        ]
+      },
+      "MeDto": {
+        "type": "object",
+        "properties": {
+          "account": {
+            "$ref": "#/components/schemas/MeAccountDto"
+          },
+          "customer": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MeCustomerDto"
+              }
+            ]
+          },
+          "driver": {
+            "nullable": true,
+            "description": "Null until the account applies to drive — the driver app shows its Apply screen.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MeDriverDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "account"
+        ]
       },
       "LocationDto": {
         "type": "object",
@@ -43493,6 +44910,7 @@
               "WALLET_CREDITED",
               "DOCUMENT_REVIEWED",
               "ACCOUNT_STATUS_CHANGED",
+              "NEW_SIGN_IN",
               "CHAT_MESSAGE",
               "PROMOTION",
               "SYSTEM_ANNOUNCEMENT"
@@ -43558,6 +44976,14 @@
               "ANDROID",
               "WEB"
             ]
+          },
+          "app": {
+            "type": "string",
+            "enum": [
+              "CUSTOMER",
+              "DRIVER"
+            ],
+            "description": "Which app this token belongs to, so it is sent only that app’s pushes. Left out, it keeps whatever sign-in recorded — or, for an older build, receives everything."
           },
           "pushToken": {
             "type": "string",
