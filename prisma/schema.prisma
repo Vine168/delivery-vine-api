@@ -1630,8 +1630,9 @@ model AuditLog {
   @@index([createdAt])
 }
 
-/// Operator-editable configuration. Secrets stay in the environment; this is
-/// for things the business changes without a deploy.
+/// Operator-editable configuration: things the business changes without a
+/// deploy. Readable through the back office, so nothing secret belongs here —
+/// secrets go in AppSecret.
 model SystemSetting {
   id              String   @id @default(cuid(2))
   key             String   @unique
@@ -1643,6 +1644,27 @@ model SystemSetting {
   updatedAt       DateTime @updatedAt @db.Timestamptz(3)
 
   @@index([category])
+}
+
+/// Credentials that would otherwise live in a .env file.
+///
+/// Every value is encrypted with SECRETS_MASTER_KEY, which is deliberately not
+/// stored here: the key to a store cannot live inside the store, so a stolen
+/// database dump on its own decrypts nothing. DATABASE_URL stays outside for
+/// the same reason — it is how this table is reached.
+///
+/// Unlike SystemSetting there is no HTTP endpoint for these, by design. They
+/// are read once at boot and managed with `npm run db:secrets`.
+model AppSecret {
+  id              String   @id @default(cuid(2))
+  /// The environment variable this supplies, e.g. JWT_ACCESS_SECRET.
+  key             String   @unique
+  /// AES-256-GCM, encrypted with SECRETS_MASTER_KEY.
+  valueEnc        String
+  description     String?
+  updatedByUserId String?
+  createdAt       DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime @updatedAt @db.Timestamptz(3)
 }
 
 /// Which drivers an operator has assigned to a zone.

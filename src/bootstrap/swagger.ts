@@ -57,7 +57,7 @@ export const SWAGGER_TAGS = [
  * a file — for client generation, a Postman import, or diffing the API
  * surface in CI — without booting an HTTP listener.
  */
-export function buildOpenApiDocument(app: INestApplication, apiPrefix: string): OpenAPIObject {
+export function buildOpenApiDocument(app: INestApplication): OpenAPIObject {
   const builder = new DocumentBuilder()
     .setTitle('Deliver API')
     .setDescription(
@@ -77,9 +77,10 @@ export function buildOpenApiDocument(app: INestApplication, apiPrefix: string): 
         '`{ "amount": 45000, "currency": "KHR" }` is 45,000 riel. The server is the only authority on price.',
         '',
         '### Authentication',
-        'Bearer access tokens (15 min) with single-use refresh tokens (30 days). One phone number may hold a',
-        'customer account, a driver account and a back-office account independently, so `POST /auth/login`',
-        'takes the role being signed in as.',
+        'Bearer access tokens (15 min) with single-use refresh tokens (30 days). One phone number holds one',
+        'mobile account that both the customer and the driver app sign in to, and separately at most one',
+        'back-office account: `POST /auth/login` with `role: ADMIN` signs in to the back office. The apps send',
+        '`device.app` when they sign in, so each gets its own notifications and live events.',
         '',
         '### Back office',
         'Endpoints under `/admin` additionally require a permission, which the operator holds through their',
@@ -94,7 +95,10 @@ export function buildOpenApiDocument(app: INestApplication, apiPrefix: string): 
       { type: 'http', scheme: 'bearer', bearerFormat: 'JWT', description: 'Access token from POST /auth/login' },
       'bearer',
     )
-    .addServer(`/${apiPrefix}`);
+    // The host itself. Every path already carries the global prefix
+    // (/api/v1/...) and /health sits outside it, so a server of /api made
+    // Swagger UI call /api/api/v1/... and /api/health.
+    .addServer('/');
 
   for (const [name, description] of SWAGGER_TAGS) {
     builder.addTag(name, description);
@@ -194,8 +198,8 @@ function use(app: INestApplication, path: string, handler: unknown): void {
 }
 
 /** Builds the document and serves it at `/swagger`. */
-export function setupSwagger(app: INestApplication, apiPrefix: string): void {
-  const document = buildOpenApiDocument(app, apiPrefix);
+export function setupSwagger(app: INestApplication): void {
+  const document = buildOpenApiDocument(app);
 
   // Registered before the documentation routes, so it covers the page, the
   // static assets and the JSON document alike — the spec is the part worth

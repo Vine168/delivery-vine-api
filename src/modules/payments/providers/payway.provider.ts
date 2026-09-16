@@ -6,6 +6,7 @@ import { firstValueFrom } from 'rxjs';
 import { ResponseCode } from '../../../common/constants/response-codes.js';
 import { AppException } from '../../../common/exceptions/app.exception.js';
 import { Currency, PaymentMethod, PaymentStatus } from '../../../generated/prisma/enums.js';
+import { SettingsService } from '../../settings/settings.service.js';
 import type { ChargeRequest, ChargeResult, PaymentProvider, VerifyResult } from './payment-provider.interface.js';
 
 /**
@@ -101,18 +102,17 @@ export class PayWayPaymentProvider implements PaymentProvider {
   private readonly merchantId?: string;
   private readonly apiKey?: string;
   private readonly currencies: Set<string>;
-  private readonly lifetimeMinutes: number;
   private readonly returnUrl: string;
 
   constructor(
     private readonly http: HttpService,
+    private readonly settings: SettingsService,
     config: ConfigService,
   ) {
     this.baseUrl = config.get<string>('payment.paywayBaseUrl', 'https://checkout-sandbox.payway.com.kh');
     this.merchantId = config.get<string>('payment.paywayMerchantId') || undefined;
     this.apiKey = config.get<string>('payment.paywayApiKey') || undefined;
     this.currencies = new Set(config.get<string[]>('payment.paywayCurrencies', ['USD']));
-    this.lifetimeMinutes = config.get<number>('payment.paywayLifetimeMinutes', 15);
     this.returnUrl = config.get<string>('payment.paywayReturnUrl', '');
   }
 
@@ -141,7 +141,8 @@ export class PayWayPaymentProvider implements PaymentProvider {
     }
 
     const tranId = this.transactionId(request);
-    const expiresAt = new Date(Date.now() + this.lifetimeMinutes * 60_000);
+    const lifetimeMinutes = await this.settings.getNumber('payment.paywayLifetimeMinutes');
+    const expiresAt = new Date(Date.now() + lifetimeMinutes * 60_000);
 
     const fields: PurchaseFields = {
       req_time: this.requestTime(),
@@ -166,7 +167,7 @@ export class PayWayPaymentProvider implements PaymentProvider {
       custom_fields: '',
       return_params: request.bookingCode,
       payout: '',
-      lifetime: String(this.lifetimeMinutes),
+      lifetime: String(lifetimeMinutes),
       additional_params: '',
       google_pay_token: '',
       skip_success_page: '',

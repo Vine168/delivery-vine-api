@@ -404,6 +404,19 @@ export class EnvironmentVariables {
   @IsString()
   @MinLength(32, { message: 'ENCRYPTION_KEY must be at least 32 characters' })
   ENCRYPTION_KEY: string;
+
+  /**
+   * Decrypts the secrets kept in AppSecret.
+   *
+   * Optional: a deployment that keeps everything in its environment never
+   * needs one. Required in practice the moment a value is missing from the
+   * environment, and the loader says so by name when that happens. It is never
+   * itself stored in the database — the key to a store cannot live inside it.
+   */
+  @IsString()
+  @MinLength(32, { message: 'SECRETS_MASTER_KEY must be at least 32 characters' })
+  @IsOptional()
+  SECRETS_MASTER_KEY?: string;
 }
 
 export function validateEnv(config: Record<string, unknown>): EnvironmentVariables {

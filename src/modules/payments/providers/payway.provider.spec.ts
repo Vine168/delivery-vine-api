@@ -4,6 +4,7 @@ import type { ConfigService } from '@nestjs/config';
 import type { HttpService } from '@nestjs/axios';
 import { of } from 'rxjs';
 import { Currency, PaymentStatus } from '../../../generated/prisma/enums.js';
+import type { SettingsService } from '../../settings/settings.service.js';
 import { PayWayPaymentProvider } from './payway.provider.js';
 
 const CONFIGURED = {
@@ -15,8 +16,20 @@ const CONFIGURED = {
   'payment.paywayReturnUrl': '',
 };
 
-const config = (values: Record<string, unknown>): ConfigService =>
-  ({ get: <T>(key: string, fallback?: T) => (values[key] as T) ?? fallback }) as ConfigService;
+/**
+ * The provider under test.
+ *
+ * The checkout window is an operator setting, so it arrives through
+ * SettingsService rather than the environment. Nothing is stored in these
+ * tests, so the fake reads the same map as the config stub — which is exactly
+ * what the real service falls back to when no operator has changed it.
+ */
+const makeProvider = (http: HttpService, values: Record<string, unknown>): PayWayPaymentProvider =>
+  new PayWayPaymentProvider(
+    http,
+    { getNumber: async (key: string) => values[key] as number } as unknown as SettingsService,
+    { get: <T>(key: string, fallback?: T) => (values[key] as T) ?? fallback } as ConfigService,
+  );
 
 /** Captures what would have been posted, and answers with a canned response. */
 function stubHttp(response: unknown) {
@@ -46,7 +59,7 @@ const fieldsFrom = (post: ReturnType<typeof stubHttp>['post']): Record<string, s
 
 describe('PayWayPaymentProvider', () => {
   describe('when unconfigured', () => {
-    const provider = new PayWayPaymentProvider(stubHttp({}).http, config({}));
+    const provider = makeProvider(stubHttp({}).http, {});
 
     it('is not offered', () => {
       expect(provider.isAvailable()).toBe(false);
@@ -63,7 +76,7 @@ describe('PayWayPaymentProvider', () => {
   describe('signing', () => {
     it('is an HMAC-SHA512 of the values concatenated in PayWay’s field order', async () => {
       const { http, post } = stubHttp(purchaseOk);
-      const provider = new PayWayPaymentProvider(http, config(CONFIGURED));
+      const provider = makeProvider(http, CONFIGURED);
 
       await provider.charge(request);
       const fields = fieldsFrom(post);
@@ -86,8 +99,8 @@ describe('PayWayPaymentProvider', () => {
       const first = stubHttp(purchaseOk);
       const second = stubHttp(purchaseOk);
 
-      await new PayWayPaymentProvider(first.http, config(CONFIGURED)).charge(request);
-      await new PayWayPaymentProvider(second.http, config(CONFIGURED)).charge({ ...request, amount: 999 });
+      await makeProvider(first.http, CONFIGURED).charge(request);
+      await makeProvider(second.http, CONFIGURED).charge({ ...request, amount: 999 });
 
       expect(fieldsFrom(first.post).hash).not.toBe(fieldsFrom(second.post).hash);
     });
@@ -96,7 +109,7 @@ describe('PayWayPaymentProvider', () => {
   describe('request shape', () => {
     it('asks for the deeplink option, which is the one that answers in JSON', async () => {
       const { http, post } = stubHttp(purchaseOk);
-      await new PayWayPaymentProvider(http, config(CONFIGURED)).charge(request);
+      await makeProvider(http, CONFIGURED).charge(request);
 
       expect(fieldsFrom(post).payment_option).toBe('abapay_khqr_deeplink');
       expect(post.mock.calls[0][2].headers.Accept).toBe('application/json');
@@ -104,7 +117,7 @@ describe('PayWayPaymentProvider', () => {
 
     it('sends money in major units — PayWay does not take cents', async () => {
       const { http, post } = stubHttp(purchaseOk);
-      await new PayWayPaymentProvider(http, config(CONFIGURED)).charge(request);
+      await makeProvider(http, CONFIGURED).charge(request);
 
       // 383 cents is $3.83, not 383.
       expect(fieldsFrom(post).amount).toBe('3.83');
@@ -112,7 +125,7 @@ describe('PayWayPaymentProvider', () => {
 
     it('sends shipping as a number, because an empty string is rejected', async () => {
       const { http, post } = stubHttp(purchaseOk);
-      await new PayWayPaymentProvider(http, config(CONFIGURED)).charge(request);
+      await makeProvider(http, CONFIGURED).charge(request);
 
       expect(fieldsFrom(post).shipping).toBe('0.00');
     });
@@ -121,8 +134,8 @@ describe('PayWayPaymentProvider', () => {
       const first = stubHttp(purchaseOk);
       const second = stubHttp(purchaseOk);
 
-      await new PayWayPaymentProvider(first.http, config(CONFIGURED)).charge(request);
-      await new PayWayPaymentProvider(second.http, config(CONFIGURED)).charge({
+      await makeProvider(first.http, CONFIGURED).charge(request);
+      await makeProvider(second.http, CONFIGURED).charge({
         ...request,
         paymentId: 'pay_zzzzzz999999',
       });
@@ -138,7 +151,7 @@ describe('PayWayPaymentProvider', () => {
 
     it('stamps req_time as UTC YYYYMMDDHHmmss', async () => {
       const { http, post } = stubHttp(purchaseOk);
-      await new PayWayPaymentProvider(http, config(CONFIGURED)).charge(request);
+      await makeProvider(http, CONFIGURED).charge(request);
 
       expect(fieldsFrom(post).req_time).toMatch(/^\d{14}$/);
     });
@@ -147,7 +160,7 @@ describe('PayWayPaymentProvider', () => {
   describe('currency', () => {
     it('refuses a currency the merchant account is not enabled for', async () => {
       const { http } = stubHttp(purchaseOk);
-      const provider = new PayWayPaymentProvider(http, config(CONFIGURED));
+      const provider = makeProvider(http, CONFIGURED);
 
       await expect(provider.charge({ ...request, currency: Currency.KHR })).rejects.toMatchObject({
         code: 'PAYMENT_METHOD_NOT_SUPPORTED',
@@ -156,9 +169,9 @@ describe('PayWayPaymentProvider', () => {
 
     it('sends riel as whole units when the account allows KHR', async () => {
       const { http, post } = stubHttp(purchaseOk);
-      const provider = new PayWayPaymentProvider(
+      const provider = makeProvider(
         http,
-        config({ ...CONFIGURED, 'payment.paywayCurrencies': ['KHR', 'USD'] }),
+        { ...CONFIGURED, 'payment.paywayCurrencies': ['KHR', 'USD'] },
       );
 
       await provider.charge({ ...request, currency: Currency.KHR, amount: 15_800 });
@@ -171,7 +184,7 @@ describe('PayWayPaymentProvider', () => {
   describe('responses', () => {
     it('returns the QR and deeplink on success', async () => {
       const { http } = stubHttp(purchaseOk);
-      const result = await new PayWayPaymentProvider(http, config(CONFIGURED)).charge(request);
+      const result = await makeProvider(http, CONFIGURED).charge(request);
 
       expect(result.status).toBe(PaymentStatus.AWAITING_PAYMENT);
       expect(result.qrString).toBe(purchaseOk.qr_string);
@@ -182,7 +195,7 @@ describe('PayWayPaymentProvider', () => {
     it('treats any code other than "00" as a provider failure', async () => {
       const { http } = stubHttp({ status: { code: 12, message: 'Payment currency is not allowed.' } });
 
-      await expect(new PayWayPaymentProvider(http, config(CONFIGURED)).charge(request)).rejects.toMatchObject({
+      await expect(makeProvider(http, CONFIGURED).charge(request)).rejects.toMatchObject({
         code: 'PAYMENT_PROVIDER_ERROR',
       });
     });
@@ -190,7 +203,7 @@ describe('PayWayPaymentProvider', () => {
     it('refuses a success that carries no QR', async () => {
       const { http } = stubHttp({ status: { code: '00' } });
 
-      await expect(new PayWayPaymentProvider(http, config(CONFIGURED)).charge(request)).rejects.toMatchObject({
+      await expect(makeProvider(http, CONFIGURED).charge(request)).rejects.toMatchObject({
         code: 'PAYMENT_PROVIDER_ERROR',
       });
     });
@@ -198,7 +211,7 @@ describe('PayWayPaymentProvider', () => {
 
   describe('verification', () => {
     const verify = (response: unknown) =>
-      new PayWayPaymentProvider(stubHttp(response).http, config(CONFIGURED)).verify('ORD202609030012839AB', request);
+      makeProvider(stubHttp(response).http, CONFIGURED).verify('ORD202609030012839AB', request);
 
     it('marks a payment paid only on code 0', async () => {
       expect((await verify({ status: { code: 0 }, data: { payment_status: 'APPROVED' } })).status).toBe(
@@ -220,7 +233,7 @@ describe('PayWayPaymentProvider', () => {
 
     it('treats an unreachable gateway as unknown, not as failure', async () => {
       const http = { post: vi.fn(() => { throw new Error('ECONNRESET'); }) } as unknown as HttpService;
-      const result = await new PayWayPaymentProvider(http, config(CONFIGURED)).verify('T123', request);
+      const result = await makeProvider(http, CONFIGURED).verify('T123', request);
 
       expect(result.status).toBe(PaymentStatus.AWAITING_PAYMENT);
       expect(result.message).toContain('Could not reach');
@@ -228,7 +241,7 @@ describe('PayWayPaymentProvider', () => {
 
     it('does nothing without a provider reference', async () => {
       const { http } = stubHttp({});
-      const result = await new PayWayPaymentProvider(http, config(CONFIGURED)).verify(null, request);
+      const result = await makeProvider(http, CONFIGURED).verify(null, request);
 
       expect(result.status).toBe(PaymentStatus.AWAITING_PAYMENT);
     });

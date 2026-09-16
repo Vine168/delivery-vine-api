@@ -1,8 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { RedisKey } from '../../common/constants/redis-keys.js';
 import type { Coordinates } from '../../common/utils/geo.util.js';
 import { RedisService } from '../../redis/redis.service.js';
+import { SettingsService } from '../settings/settings.service.js';
 
 export interface DriverFix {
   latitude: number;
@@ -33,23 +33,17 @@ export interface NearbyDriver {
 @Injectable()
 export class DriverPresenceService {
   private readonly logger = new Logger(DriverPresenceService.name);
-  private readonly presenceTtl: number;
 
   constructor(
     private readonly redis: RedisService,
-    config: ConfigService,
-  ) {
-    this.presenceTtl = config.get<number>('delivery.driverPresenceTtlSeconds', 60);
-  }
+    private readonly settings: SettingsService,
+  ) {}
 
   /** Puts a driver into the pool for their vehicle type. */
   async goOnline(driverId: string, vehicleTypeCode: string, at?: Coordinates): Promise<void> {
-    await this.redis.client.set(
-      RedisKey.driverPresence(driverId),
-      vehicleTypeCode,
-      'EX',
-      this.presenceTtl,
-    );
+    const presenceTtl = await this.settings.getNumber('delivery.driverPresenceTtlSeconds');
+
+    await this.redis.client.set(RedisKey.driverPresence(driverId), vehicleTypeCode, 'EX', presenceTtl);
 
     if (at) {
       await this.updateLocation(driverId, vehicleTypeCode, {
@@ -80,12 +74,13 @@ export class DriverPresenceService {
    */
   async updateLocation(driverId: string, vehicleTypeCode: string, fix: DriverFix): Promise<void> {
     const geoKey = RedisKey.driverGeoIndex(vehicleTypeCode);
+    const presenceTtl = await this.settings.getNumber('delivery.driverPresenceTtlSeconds');
 
     await this.redis.client
       .multi()
       .geoadd(geoKey, fix.longitude, fix.latitude, driverId)
-      .set(RedisKey.driverLocation(driverId), JSON.stringify(fix), 'EX', this.presenceTtl * 5)
-      .set(RedisKey.driverPresence(driverId), vehicleTypeCode, 'EX', this.presenceTtl)
+      .set(RedisKey.driverLocation(driverId), JSON.stringify(fix), 'EX', presenceTtl * 5)
+      .set(RedisKey.driverPresence(driverId), vehicleTypeCode, 'EX', presenceTtl)
       .exec();
   }
 

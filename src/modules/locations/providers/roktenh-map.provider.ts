@@ -8,6 +8,7 @@ import { AppException } from '../../../common/exceptions/app.exception.js';
 import { CryptoUtil } from '../../../common/utils/crypto.util.js';
 import { GeoUtil, type Coordinates } from '../../../common/utils/geo.util.js';
 import { RedisService } from '../../../redis/redis.service.js';
+import { SettingsService } from '../../settings/settings.service.js';
 import type {
   MapProvider,
   MatrixResult,
@@ -83,17 +84,16 @@ export class RoktenhMapProvider implements MapProvider {
   private readonly baseUrl: string;
   private readonly apiKey: string;
   private readonly timeoutMs: number;
-  private readonly cacheTtl: number;
 
   constructor(
     private readonly http: HttpService,
     private readonly redis: RedisService,
+    private readonly settings: SettingsService,
     config: ConfigService,
   ) {
     this.baseUrl = config.getOrThrow<string>('map.baseUrl');
     this.apiKey = config.getOrThrow<string>('map.apiKey');
     this.timeoutMs = config.get<number>('map.timeoutMs', 8000);
-    this.cacheTtl = config.get<number>('map.cacheTtlSeconds', 86_400);
   }
 
   // ── Places ─────────────────────────────────────────────────────────────
@@ -112,8 +112,9 @@ export class RoktenhMapProvider implements MapProvider {
       );
 
     if (!cached && places.length > 0) {
-      await this.redis.setJson(cacheKey, places, this.cacheTtl);
-      await this.cachePlaces(places);
+      const cacheTtl = await this.settings.getNumber('map.cacheTtlSeconds');
+      await this.redis.setJson(cacheKey, places, cacheTtl);
+      await this.cachePlaces(places, cacheTtl);
     }
 
     const ranked = near
@@ -145,8 +146,9 @@ export class RoktenhMapProvider implements MapProvider {
     const place = this.toPlaces(collection)[0] ?? null;
 
     if (place) {
-      await this.redis.setJson(cacheKey, place, this.cacheTtl);
-      await this.cachePlaces([place]);
+      const cacheTtl = await this.settings.getNumber('map.cacheTtlSeconds');
+      await this.redis.setJson(cacheKey, place, cacheTtl);
+      await this.cachePlaces([place], cacheTtl);
     }
 
     return place;
@@ -309,9 +311,9 @@ export class RoktenhMapProvider implements MapProvider {
   }
 
   /** There is no detail endpoint, so search results become the detail cache. */
-  private async cachePlaces(places: PlaceResult[]): Promise<void> {
+  private async cachePlaces(places: PlaceResult[], cacheTtl: number): Promise<void> {
     await Promise.all(
-      places.map((place) => this.redis.setJson(RedisKey.mapPlaceDetail(place.placeId), place, this.cacheTtl)),
+      places.map((place) => this.redis.setJson(RedisKey.mapPlaceDetail(place.placeId), place, cacheTtl)),
     );
   }
 }

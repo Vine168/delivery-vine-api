@@ -1,5 +1,5 @@
 import { NestFactory } from '@nestjs/core';
-import { AppModule } from '../app.module.js';
+import { loadSecretsIntoEnv } from '../config/secrets.loader.js';
 import { PrismaService } from './prisma.service.js';
 import { PasswordService } from '../modules/auth/services/password.service.js';
 import {
@@ -32,6 +32,11 @@ async function main(): Promise<void> {
   if (process.env.NODE_ENV === 'production') {
     throw new Error('Refusing to create accounts with a known password in production.');
   }
+
+  await loadSecretsIntoEnv();
+
+  // Imported after the secrets, never at the top. See the note in main.ts.
+  const { AppModule } = await import('../app.module.js');
 
   const app = await NestFactory.createApplicationContext(AppModule, { logger: false });
   const prisma = app.get(PrismaService);

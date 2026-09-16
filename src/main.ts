@@ -5,12 +5,26 @@ import type { NestExpressApplication } from '@nestjs/platform-express';
 import compression from 'compression';
 import helmet from 'helmet';
 import { Logger } from 'nestjs-pino';
-import { AppModule } from './app.module.js';
 import { setupSwagger } from './bootstrap/swagger.js';
 import { LIMITS } from './common/constants/app.constants.js';
 import { createValidationPipe } from './common/pipes/validation.pipe.js';
+import { loadSecretsIntoEnv } from './config/secrets.loader.js';
 
 async function bootstrap(): Promise<void> {
+  await loadSecretsIntoEnv();
+
+  /*
+   * Imported here rather than at the top of the file, and this is load-bearing.
+   *
+   * `ConfigModule.forRoot({ validate })` runs while the `@Module` decorator's
+   * argument is evaluated — which happens when the module is imported, not
+   * when the application is created. ES module imports are hoisted and fully
+   * evaluated before any of this function runs, so a static import would
+   * validate the environment before the secrets above had been fetched, and
+   * refuse to start over variables that were about to arrive.
+   */
+  const { AppModule } = await import('./app.module.js');
+
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     bufferLogs: true,
     rawBody: false,
@@ -70,14 +84,16 @@ async function bootstrap(): Promise<void> {
   app.enableShutdownHooks();
 
   if (config.get<boolean>('app.swaggerEnabled', true)) {
-    setupSwagger(app, apiPrefix);
+    setupSwagger(app);
   }
 
   await app.listen(port, host);
 
   const logger = app.get(Logger);
-  logger.log(`Deliver API listening on http://${host}:${port}/${apiPrefix}`);
-  logger.log(`API documentation at http://${host}:${port}/swagger`);
+  // 0.0.0.0 is where the server listens, not an address to open in a browser.
+  const shownHost = host === '0.0.0.0' || host === '::' ? 'localhost' : host;
+  logger.log(`Deliver API listening on http://${shownHost}:${port}/${apiPrefix}`);
+  logger.log(`API documentation at http://${shownHost}:${port}/swagger`);
 }
 
 await bootstrap();

@@ -1,5 +1,5 @@
 import { NestFactory } from '@nestjs/core';
-import { AppModule } from '../app.module.js';
+import { loadSecretsIntoEnv } from '../config/secrets.loader.js';
 import { PrismaService } from './prisma.service.js';
 import { UserRole, UserStatus } from '../generated/prisma/enums.js';
 
@@ -27,6 +27,11 @@ import { UserRole, UserStatus } from '../generated/prisma/enums.js';
 const APPLY = process.argv.includes('--apply');
 
 async function main(): Promise<void> {
+  await loadSecretsIntoEnv();
+
+  // Imported after the secrets, never at the top. See the note in main.ts.
+  const { AppModule } = await import('../app.module.js');
+
   const app = await NestFactory.createApplicationContext(AppModule, { logger: false });
   const prisma = app.get(PrismaService);
 

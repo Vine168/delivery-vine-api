@@ -9,6 +9,7 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { argon2id, hash } from 'argon2';
+import { loadSecretsIntoEnv } from '../config/secrets.loader.js';
 import { PrismaClient } from '../generated/prisma/client.js';
 import { Currency, DiscountType, UserRole, UserStatus } from '../generated/prisma/enums.js';
 import { PERMISSION_CATALOGUE, SYSTEM_ROLES } from '../modules/admin/permissions.catalogue.js';
@@ -398,6 +399,9 @@ async function seedSuperAdmin(): Promise<void> {
 }
 
 async function main(): Promise<void> {
+  // The bootstrap admin's phone and password may be stored rather than set here.
+  await loadSecretsIntoEnv();
+
   console.log(`Seeding ${process.env.NODE_ENV ?? 'development'} database…`);
   await seedVehicleTypesAndPricing();
   await seedExchangeRates();

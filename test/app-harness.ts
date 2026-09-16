@@ -1,7 +1,6 @@
 import { VersioningType, type INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import type { NestExpressApplication } from '@nestjs/platform-express';
-import { AppModule } from '../src/app.module.js';
 import { Currency } from '../src/generated/prisma/enums.js';
 import { MAP_PROVIDER } from '../src/modules/locations/providers/map-provider.interface.js';
 import { FakeMapProvider } from './fake-map.provider.js';
@@ -11,6 +10,7 @@ import { DeliveryMatchingService } from '../src/modules/delivery-matching/delive
 import { AdminNotificationsService } from '../src/modules/admin/services/admin-notifications.service.js';
 import { WithdrawalsService } from '../src/modules/withdrawals/withdrawals.service.js';
 import { RedisService } from '../src/redis/redis.service.js';
+import { loadSecretsIntoEnv } from '../src/config/secrets.loader.js';
 
 export interface TestHarness {
   app: INestApplication;
@@ -40,6 +40,13 @@ export async function createTestHarness(): Promise<TestHarness> {
   // distances, and a test's expected price cannot depend on what a live
   // routing engine returns today.
   const map = new FakeMapProvider();
+
+  // A no-op while .env.test holds every value, which it does — but the suite
+  // should boot the same way the application does, not a shortcut past it.
+  await loadSecretsIntoEnv();
+
+  // Imported after the secrets, never at the top. See the note in main.ts.
+  const { AppModule } = await import('../src/app.module.js');
 
   const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
     .overrideProvider(MAP_PROVIDER)

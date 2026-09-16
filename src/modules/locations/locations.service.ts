@@ -1,8 +1,8 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { ResponseCode } from '../../common/constants/response-codes.js';
 import { AppException } from '../../common/exceptions/app.exception.js';
 import { GeoUtil, type Coordinates } from '../../common/utils/geo.util.js';
+import { SettingsService } from '../settings/settings.service.js';
 import {
   MAP_PROVIDER,
   type MapProvider,
@@ -32,14 +32,11 @@ const ROAD_WINDING_FACTOR = 1.3;
 @Injectable()
 export class LocationsService {
   private readonly logger = new Logger(LocationsService.name);
-  private readonly allowFallback: boolean;
 
   constructor(
     @Inject(MAP_PROVIDER) private readonly maps: MapProvider,
-    config: ConfigService,
-  ) {
-    this.allowFallback = config.get<boolean>('map.allowHaversineFallback', true);
-  }
+    private readonly settings: SettingsService,
+  ) {}
 
   async search(query: SearchLocationsQueryDto): Promise<LocationDto[]> {
     const near =
@@ -85,13 +82,14 @@ export class LocationsService {
    * engine is having a bad afternoon, so an outage degrades to straight-line
    * distance × a winding factor, clearly labelled `haversine` so the caller —
    * and the stored pricing snapshot — knows the number was estimated.
-   * Set MAP_ALLOW_HAVERSINE_FALLBACK=false to fail closed instead.
+   * Turn off "Estimate routes during a map outage" in the back office to fail
+   * closed instead.
    */
   async route(waypoints: Coordinates[], profile: RoutingProfile): Promise<RouteResult> {
     try {
       return await this.maps.getRoute(waypoints, profile);
     } catch (error) {
-      return this.estimateRoute(waypoints, profile, error);
+      return await this.estimateRoute(waypoints, profile, error);
     }
   }
 
@@ -103,7 +101,7 @@ export class LocationsService {
     try {
       return await this.maps.getDistanceMatrix(origin, destinations, profile);
     } catch (error) {
-      this.rethrowIfClosed(error);
+      await this.rethrowIfClosed(error);
       this.logger.warn(`Distance matrix unavailable, estimating: ${String(error)}`);
 
       return {
@@ -115,8 +113,12 @@ export class LocationsService {
     }
   }
 
-  private estimateRoute(waypoints: Coordinates[], profile: RoutingProfile, error: unknown): RouteResult {
-    this.rethrowIfClosed(error);
+  private async estimateRoute(
+    waypoints: Coordinates[],
+    profile: RoutingProfile,
+    error: unknown,
+  ): Promise<RouteResult> {
+    await this.rethrowIfClosed(error);
     this.logger.warn(`Route unavailable, estimating: ${String(error)}`);
 
     let straightLine = 0;
@@ -139,11 +141,11 @@ export class LocationsService {
    * estimating a straight line over it would invent a delivery that cannot
    * happen. Only transport failures are estimated around.
    */
-  private rethrowIfClosed(error: unknown): void {
+  private async rethrowIfClosed(error: unknown): Promise<void> {
     if (error instanceof AppException && error.code === ResponseCode.ROUTE_NOT_FOUND) {
       throw error;
     }
-    if (!this.allowFallback) {
+    if (!(await this.settings.getBoolean('map.allowHaversineFallback'))) {
       throw AppException.serviceUnavailable(ResponseCode.MAP_PROVIDER_UNAVAILABLE);
     }
   }

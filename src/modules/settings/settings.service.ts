@@ -71,7 +71,7 @@ export class SettingsService {
   async findAll(): Promise<SettingView[]> {
     const rows = await this.prisma.systemSetting.findMany({
       where: { key: { in: SETTINGS_CATALOGUE.map((setting) => setting.key) } },
-      select: { key: true, value: true, updatedAt: true },
+      select: { key: true, value: true, updatedAt: true, updatedByUserId: true },
     });
     const byKey = new Map(rows.map((row) => [row.key, row]));
 
@@ -84,7 +84,11 @@ export class SettingsService {
         ...definition,
         value: stored ?? fallback,
         defaultValue: fallback,
-        isOverridden: stored !== undefined && stored !== null,
+        // "An operator changed this", not merely "a row exists" — seedDefaults
+        // writes a row for every key, and those carry no author. Without this
+        // the screen would mark all of them as changed and offer to reset
+        // settings nobody has touched.
+        isOverridden: row?.updatedByUserId != null,
         updatedAt: row?.updatedAt.toISOString() ?? null,
       };
     });
@@ -135,6 +139,41 @@ export class SettingsService {
 
   async invalidate(): Promise<void> {
     await this.redis.client.del(RedisKey.systemSettings);
+  }
+
+  /**
+   * Writes a row for every catalogue key that has none yet, using the value the
+   * platform is already running with.
+   *
+   * The table holds only overrides, so an absent key means "whatever this
+   * deployment configured" — correct, but invisible: nothing in the database
+   * says what is actually in force. This materialises the whole catalogue so
+   * every setting can be read, and changed, as a row.
+   *
+   * Rows that already exist are left alone, so running this again never undoes
+   * an operator's change. The rows it writes carry no author, which is what
+   * keeps them reported as unchanged.
+   */
+  async seedDefaults(): Promise<{ created: string[]; existing: number }> {
+    const rows = await this.prisma.systemSetting.findMany({ select: { key: true } });
+    const present = new Set(rows.map((row) => row.key));
+    const missing = SETTINGS_CATALOGUE.filter((definition) => !present.has(definition.key));
+
+    if (missing.length > 0) {
+      await this.prisma.systemSetting.createMany({
+        data: missing.map((definition) => ({
+          key: definition.key,
+          category: definition.category,
+          value: this.fallback(definition),
+          description: definition.description,
+        })),
+        skipDuplicates: true,
+      });
+
+      await this.invalidate();
+    }
+
+    return { created: missing.map((definition) => definition.key), existing: present.size };
   }
 
   // ── Internals ──────────────────────────────────────────────────────────

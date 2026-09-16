@@ -35189,7 +35189,7 @@
   },
   "info": {
     "title": "Deliver API",
-    "description": "REST API for the Deliver platform — customer app, driver app and back office.\n\n### Response envelope\nEvery response uses the same shape:\n```json\n{ \"success\": true, \"code\": \"DELIVERY_CREATED\", \"message\": \"...\", \"data\": {}, \"meta\": null }\n```\nErrors use `success: false` with `code` and an optional `errors` array. Clients should branch on\n`code`, never on `message`.\n\n### Money\nAmounts are integers in the currency minor unit and always travel with their currency:\n`{ \"amount\": 45000, \"currency\": \"KHR\" }` is 45,000 riel. The server is the only authority on price.\n\n### Authentication\nBearer access tokens (15 min) with single-use refresh tokens (30 days). One phone number may hold a\ncustomer account, a driver account and a back-office account independently, so `POST /auth/login`\ntakes the role being signed in as.\n\n### Back office\nEndpoints under `/admin` additionally require a permission, which the operator holds through their\nrole. `GET /admin/me` returns the permissions the signed-in operator holds, so the dashboard can\ndecide what to render; the server re-checks them from the database on every request and never trusts\nthe copy in the token. A refusal names what was missing — \"You do not have permission to cancel\ndeliveries.\" — rather than a bare 403.",
+    "description": "REST API for the Deliver platform — customer app, driver app and back office.\n\n### Response envelope\nEvery response uses the same shape:\n```json\n{ \"success\": true, \"code\": \"DELIVERY_CREATED\", \"message\": \"...\", \"data\": {}, \"meta\": null }\n```\nErrors use `success: false` with `code` and an optional `errors` array. Clients should branch on\n`code`, never on `message`.\n\n### Money\nAmounts are integers in the currency minor unit and always travel with their currency:\n`{ \"amount\": 45000, \"currency\": \"KHR\" }` is 45,000 riel. The server is the only authority on price.\n\n### Authentication\nBearer access tokens (15 min) with single-use refresh tokens (30 days). One phone number holds one\nmobile account that both the customer and the driver app sign in to, and separately at most one\nback-office account: `POST /auth/login` with `role: ADMIN` signs in to the back office. The apps send\n`device.app` when they sign in, so each gets its own notifications and live events.\n\n### Back office\nEndpoints under `/admin` additionally require a permission, which the operator holds through their\nrole. `GET /admin/me` returns the permissions the signed-in operator holds, so the dashboard can\ndecide what to render; the server re-checks them from the database on every request and never trusts\nthe copy in the token. A refusal names what was missing — \"You do not have permission to cancel\ndeliveries.\" — rather than a bare 403.",
     "version": "1.0",
     "contact": {}
   },
@@ -35325,7 +35325,7 @@
   ],
   "servers": [
     {
-      "url": "/api"
+      "url": "/"
     }
   ],
   "components": {

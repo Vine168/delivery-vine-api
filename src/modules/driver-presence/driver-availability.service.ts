@@ -1,5 +1,4 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { DomainEvent } from '../../common/constants/events.js';
 import { RedisKey } from '../../common/constants/redis-keys.js';
@@ -10,6 +9,7 @@ import { PrismaService } from '../../database/prisma.service.js';
 import { RedisService } from '../../redis/redis.service.js';
 import { DriverAvailabilityStatus } from '../../generated/prisma/enums.js';
 import { DriverReadinessService } from '../drivers/driver-readiness.service.js';
+import { SettingsService } from '../settings/settings.service.js';
 import { DriverPresenceService } from './driver-presence.service.js';
 import {
   DriverAvailabilityInput,
@@ -22,7 +22,6 @@ import {
 @Injectable()
 export class DriverAvailabilityService {
   private readonly logger = new Logger(DriverAvailabilityService.name);
-  private readonly trackPointInterval: number;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -30,13 +29,8 @@ export class DriverAvailabilityService {
     private readonly readiness: DriverReadinessService,
     private readonly redis: RedisService,
     private readonly events: EventEmitter2,
-    config: ConfigService,
-  ) {
-    this.trackPointInterval = config.get<number>(
-      'delivery.trackPointMinIntervalSeconds',
-      20,
-    );
-  }
+    private readonly settings: SettingsService,
+  ) {}
 
   async get(driverId: string): Promise<DriverAvailabilityDto> {
     const [availability, readiness, onlineSecondsToday] = await Promise.all([
@@ -289,13 +283,8 @@ export class DriverAvailabilityService {
     recordedAt: Date,
   ): Promise<boolean> {
     const throttleKey = RedisKey.trackPointThrottle(deliveryId);
-    const firstInWindow = await this.redis.client.set(
-      throttleKey,
-      '1',
-      'EX',
-      this.trackPointInterval,
-      'NX',
-    );
+    const interval = await this.settings.getNumber('delivery.trackPointMinIntervalSeconds');
+    const firstInWindow = await this.redis.client.set(throttleKey, '1', 'EX', interval, 'NX');
 
     if (!firstInWindow) return false;
 

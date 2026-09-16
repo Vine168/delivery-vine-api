@@ -5,6 +5,7 @@ import { ResponseCode } from '../../../common/constants/response-codes.js';
 import { OtpChannel, OtpPurpose, UserRole } from '../../../generated/prisma/enums.js';
 import type { PrismaService } from '../../../database/prisma.service.js';
 import type { RedisService } from '../../../redis/redis.service.js';
+import type { SettingsService } from '../../settings/settings.service.js';
 import { OtpService } from './otp.service.js';
 import type { OtpMessage, OtpSender } from './otp-sender.interface.js';
 
@@ -113,10 +114,23 @@ describe('OtpService', () => {
       get: <T>(key: string, fallback?: T) => (CONFIG[key] as T) ?? fallback,
     } as unknown as ConfigService;
 
+    // The limits are operator settings now. Nothing is stored in these tests,
+    // so the fake answers with the same deployment defaults the real service
+    // would fall back to.
+    const settings = {
+      async getNumber(key: string) {
+        return CONFIG[key] as number;
+      },
+      async getNumbers(keys: readonly string[]) {
+        return Object.fromEntries(keys.map((key) => [key, CONFIG[key] as number]));
+      },
+    } as unknown as SettingsService;
+
     service = new OtpService(
       redis as unknown as RedisService,
       prisma as unknown as PrismaService,
       config,
+      settings,
       sender,
     );
   });

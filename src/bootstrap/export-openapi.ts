@@ -4,7 +4,7 @@ import { NestFactory } from '@nestjs/core';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
-import { AppModule } from '../app.module.js';
+import { loadSecretsIntoEnv } from '../config/secrets.loader.js';
 import { buildOpenApiDocument } from './swagger.js';
 
 /**
@@ -20,6 +20,11 @@ import { buildOpenApiDocument } from './swagger.js';
  */
 async function exportDocument(): Promise<void> {
   const output = resolve(process.argv[2] ?? 'openapi.json');
+  await loadSecretsIntoEnv();
+
+  // Imported after the secrets, never at the top: importing this module
+  // validates the environment. See the note in main.ts.
+  const { AppModule } = await import('../app.module.js');
 
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     logger: false,
@@ -33,7 +38,7 @@ async function exportDocument(): Promise<void> {
   app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
   await app.init();
 
-  const document = buildOpenApiDocument(app, apiPrefix);
+  const document = buildOpenApiDocument(app);
   const operations = Object.values(document.paths).reduce(
     (total, item) =>
       total + Object.keys(item).filter((key) => ['get', 'post', 'put', 'patch', 'delete'].includes(key)).length,

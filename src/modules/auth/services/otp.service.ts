@@ -6,6 +6,7 @@ import { AppException } from '../../../common/exceptions/app.exception.js';
 import { CryptoUtil } from '../../../common/utils/crypto.util.js';
 import { PrismaService } from '../../../database/prisma.service.js';
 import { RedisService } from '../../../redis/redis.service.js';
+import { SettingsService } from '../../settings/settings.service.js';
 import type { OtpChannel, OtpPurpose, UserRole } from '../../../generated/prisma/enums.js';
 import { OTP_SENDER, type OtpSender } from './otp-sender.interface.js';
 
@@ -48,6 +49,7 @@ export class OtpService {
     private readonly redis: RedisService,
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
+    private readonly settings: SettingsService,
     @Inject(OTP_SENDER) private readonly sender: OtpSender,
   ) {}
 
@@ -64,11 +66,22 @@ export class OtpService {
    * per (identifier, purpose). Returns when the client may ask again.
    */
   async issue(input: IssueOtpInput): Promise<OtpChallenge> {
-    const ttlSeconds = this.config.get<number>('otp.ttlSeconds', 300);
-    const cooldownSeconds = this.config.get<number>('otp.resendCooldownSeconds', 60);
-    const maxPerHour = this.config.get<number>('otp.maxPerHour', 5);
+    // An operator tunes these from the back office; the env value is only the
+    // deployment's starting point.
+    const limits = await this.settings.getNumbers([
+      'otp.ttlSeconds',
+      'otp.resendCooldownSeconds',
+      'otp.maxPerHour',
+      'otp.maxAttempts',
+    ] as const);
+    const ttlSeconds = limits['otp.ttlSeconds'];
+    const cooldownSeconds = limits['otp.resendCooldownSeconds'];
+    const maxPerHour = limits['otp.maxPerHour'];
+    const maxAttempts = limits['otp.maxAttempts'];
+
+    // Not operator settings: the apps and the SMS template agree on the code's
+    // length, and returning codes in the response is a development switch.
     const length = this.config.get<number>('otp.length', 6);
-    const maxAttempts = this.config.get<number>('otp.maxAttempts', 5);
 
     const subjectKey = this.subjectKey(input);
     const cooldownKey = RedisKey.otpResendCooldown(input.purpose, subjectKey);
@@ -166,9 +179,9 @@ export class OtpService {
     // many guesses arrive at once. Reading a count and writing it back after
     // the comparison let every request in a parallel burst see the same count,
     // and each of them got a guess the cap was meant to refuse.
-    const maxAttempts = this.config.get<number>('otp.maxAttempts', 5);
-    const ttlSeconds = this.config.get<number>('otp.ttlSeconds', 300);
-    const attempt = await this.redis.incrementWithTtl(attemptsKey, ttlSeconds);
+    const limits = await this.settings.getNumbers(['otp.maxAttempts', 'otp.ttlSeconds'] as const);
+    const maxAttempts = limits['otp.maxAttempts'];
+    const attempt = await this.redis.incrementWithTtl(attemptsKey, limits['otp.ttlSeconds']);
 
     if (attempt > maxAttempts) {
       await this.redis.client.del(otpKey, attemptsKey);
@@ -193,7 +206,7 @@ export class OtpService {
     }
     await this.redis.client.del(attemptsKey);
 
-    const tokenTtl = this.config.get<number>('otp.verificationTokenTtlSeconds', 900);
+    const tokenTtl = await this.settings.getNumber('otp.verificationTokenTtlSeconds');
     const token = CryptoUtil.randomToken(32);
     const tokenHash = CryptoUtil.sha256(token);
     const expiresAt = new Date(Date.now() + tokenTtl * 1000);

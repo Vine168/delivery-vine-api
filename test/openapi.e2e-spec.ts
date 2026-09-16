@@ -34,7 +34,7 @@ describe('OpenAPI document (e2e)', () => {
 
   beforeAll(async () => {
     harness = await createTestHarness();
-    document = buildOpenApiDocument(harness.app, 'api');
+    document = buildOpenApiDocument(harness.app);
 
     operations = Object.entries(document.paths).flatMap(([path, item]) =>
       Object.entries(item as Record<string, Operation>)
@@ -133,6 +133,12 @@ describe('OpenAPI document (e2e)', () => {
       expect(paths).toContain('/health');
       // 179 operations across rather fewer paths, since many share one URL.
       expect(paths.filter((path) => path.startsWith('/api/v1/')).length).toBeGreaterThan(130);
+    });
+
+    it('points at the host itself, since every path already carries the prefix', () => {
+      // A server of /api on top of /api/v1/... paths made Swagger UI call
+      // /api/api/v1/... and /api/health.
+      expect(document.servers).toEqual([{ url: '/' }]);
     });
   });
 });

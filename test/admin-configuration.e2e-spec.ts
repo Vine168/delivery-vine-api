@@ -6,6 +6,7 @@ import {
   adminAccount,
   completedDelivery,
   http,
+  nextPhone,
   readyDriver,
   type ActivatedAccount,
   type AdminAccount,
@@ -593,6 +594,23 @@ describe('Back office — pricing, zones, promos and settings (e2e)', () => {
         .set({ Authorization: `Bearer ${driver.accessToken}` })
         .send({ amount: delivery.netAmount, currency: 'KHR', method: 'BANK_TRANSFER' })
         .expect(201);
+    });
+
+    it('changes an OTP limit that used to require a redeploy', async () => {
+      await http(harness)
+        .put(`${API}/admin/settings/otp.resendCooldownSeconds`)
+        .set(asAdmin())
+        .send({ value: 180 })
+        .expect(200);
+
+      const registered = await http(harness)
+        .post(`${API}/auth/customer/register`)
+        .send({ phone: nextPhone(), fullName: 'Sok Dara' })
+        .expect(201);
+
+      // The countdown the app shows, read from the settings table rather than
+      // from OTP_RESEND_COOLDOWN_SECONDS.
+      expect(registered.body.data.otp.resendAfterSeconds).toBe(180);
     });
 
     it('resets to the deployment default, and records both changes', async () => {
